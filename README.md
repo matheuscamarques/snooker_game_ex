@@ -6,6 +6,10 @@ SnookerGameEx is a real-time multiplayer snooker game built with the Phoenix Fra
 
 ![Snooker Game](./screenshot.png)
 
+# Pre-requisite
+Understant all off thins in my last project. You can make you own aproach for all things in this project. And add your optimization. And add your performance code. 
+[Collision Simulator Ex](https://github.com/matheuscamarques/collision_simulator_ex)
+
 
 ## Project Overview
 
