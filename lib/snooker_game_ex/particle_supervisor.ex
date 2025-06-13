@@ -1,25 +1,30 @@
 defmodule SnookerGameEx.ParticleSupervisor do
   @moduledoc """
-  Supervisor dinâmico responsável por iniciar e gerenciar o ciclo de vida dos
-  processos `Particle`.
+  A dynamic supervisor responsible for starting and managing the lifecycle
+  of `Particle` processes.
   """
   use Supervisor
 
   @ball_colors List.duplicate("red", 15)
   @spacing_buffer 2.5
 
-  @doc "Inicia o supervisor de partículas."
+  @doc "Starts the particle supervisor."
   @spec start_link(any()) :: Supervisor.on_start()
   def start_link(init_arg) do
     Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
   end
 
   @doc """
-  Callback de inicialização do supervisor. Gera as especificações dos filhos (workers)
-  para cada `Particle` a ser criada.
+  The supervisor's init callback.
+
+  It generates the child specifications (workers) for each `Particle` to be created,
+  placing them in their initial positions on the snooker table (the white ball and
+  the triangular rack of red balls). It also creates the `:particle_data` ETS
+  table that will be shared across processes.
   """
   @impl true
   def init(_init_arg) do
+    # Creates the ETS table that will store all particle state data for quick access.
     :ets.new(:particle_data, [
       :set,
       :public,
@@ -32,28 +37,29 @@ defmodule SnookerGameEx.ParticleSupervisor do
     radius = SnookerGameEx.CollisionEngine.particle_radius()
     diameter = radius * 2
 
-    # --- INÍCIO DA CORREÇÃO ---
-    # Calcula a coordenada Y central da mesa, considerando o deslocamento da borda.
+    # --- Initial Ball Positioning ---
+    # Calculate the center Y coordinate of the table, accounting for the border offset.
     center_y = bounds.y + bounds.h / 2
 
-    # Posição da bola branca. O "200" é uma distância da borda esquerda da área de jogo.
+    # Position of the white ball. "200" is a distance from the left edge of the play area.
     white_ball_pos = [bounds.x + 200, center_y]
 
-    # Posição da bola da frente do triângulo (o ápice).
-    # O "700" é uma distância da borda esquerda da área de jogo.
+    # Position of the front ball of the triangle (the apex).
+    # "700" is a distance from the left edge of the play area.
     apex_pos = %{x: bounds.x + 700, y: center_y}
-    # --- FIM DA CORREÇÃO ---
 
+    # Calculate the separation distances for the triangular rack.
     row_separation = radius * :math.sqrt(3) + @spacing_buffer
     vertical_separation = diameter + @spacing_buffer
 
+    # Generates the positions for the balls in the triangular rack.
     triangle_positions =
       Stream.unfold(0, fn row_index ->
         num_balls_in_row = row_index + 1
         row_x = apex_pos.x + row_index * row_separation
 
-        # Esta lógica para centralizar as fileiras do triângulo já está correta,
-        # pois se baseia na posição do ápice (apex_pos), que agora foi corrigida.
+        # This logic correctly centers the rows of the triangle
+        # based on the apex position.
         start_y = apex_pos.y - ((num_balls_in_row - 1) * vertical_separation) / 2
 
         positions_in_row =
@@ -67,6 +73,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
       |> Stream.flat_map(& &1)
       |> Enum.take(length(@ball_colors))
 
+    # Creates the child specs for the colored balls.
     colored_balls =
       Enum.zip(@ball_colors, triangle_positions)
       |> Enum.with_index(1)
@@ -74,16 +81,20 @@ defmodule SnookerGameEx.ParticleSupervisor do
         particle_spec(id, color, pos)
       end)
 
+    # Combine all child specs for the supervisor.
     children = [
-      # Bola Branca (ID 0)
-      particle_spec(0, "white", white_ball_pos) # Usa a posição corrigida
-      # Resto das bolas
+      # White Ball (ID 0)
+      particle_spec(0, "white", white_ball_pos)
+      # The rest of the balls
       | colored_balls
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
   end
 
+  # --- Private Helper ---
+
+  # Generates a supervisor child specification for a single particle.
   defp particle_spec(id, color, pos) do
     %{
       id: id,

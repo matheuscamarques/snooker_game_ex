@@ -1,63 +1,69 @@
 defmodule SnookerGameEx.SpatialHash do
   @moduledoc """
-  Implementação de um `Spatial Hash`, uma estrutura de dados para otimização espacial.
+  An implementation of a `Spatial Hash`, a data structure for spatial optimization.
 
-  O objetivo é acelerar a busca por objetos próximos ("broad-phase" da detecção de colisão).
-  O espaço 2D é dividido em uma grade de células de tamanho fixo. Cada objeto é inserido
-  na célula correspondente à sua posição.
+  The goal is to accelerate the search for nearby objects (the "broad-phase" of
+  collision detection). The 2D space is divided into a grid of fixed-size cells.
+  Each object is inserted into the cell corresponding to its position.
 
-  Ao procurar por objetos próximos a um ponto, em vez de verificar todos os objetos na
-  simulação, apenas consultamos as células da grade que se sobrepõem à área de busca.
-  Isso reduz drasticamente a complexidade do problema de O(n²) para algo próximo a O(n).
+  When searching for objects near a point, instead of checking every object in the
+  simulation, we only need to query the grid cells that overlap with the search area.
+  This drastically reduces the problem's complexity from O(n^2) to nearly O(n).
+  This implementation is in-memory, using nested maps.
   """
 
   defstruct cell_size: 100, grid: %{}
 
   @type t :: %__MODULE__{
           cell_size: pos_integer(),
-          # A grade é um mapa onde as chaves são coordenadas de célula {x, y} e os valores
-          # são `MapSet`s contendo os IDs dos objetos naquela célula.
+          # The grid is a map where keys are cell coordinates {x, y} and values
+          # are `MapSet`s containing the IDs of the objects in that cell.
           grid: %{optional({integer(), integer()}) => MapSet.t(any())}
         }
 
   @doc """
-  Cria uma nova instância do `SpatialHash`.
-  O `cell_size` deve ser, idealmente, um pouco maior que o tamanho dos objetos que serão inseridos.
+  Creates a new `SpatialHash` instance.
+
+  The `cell_size` should ideally be slightly larger than the size of the
+  objects that will be inserted.
   """
+  @spec new(cell_size :: number()) :: t()
   def new(cell_size) when is_number(cell_size) and cell_size > 0 do
     %__MODULE__{cell_size: cell_size}
   end
 
   @doc """
-  Insere um objeto (identificado por `id`) na posição `{x, y}` na grade.
+  Inserts an object (identified by `id`) at position `{x, y}` into the grid.
   """
+  @spec insert(hash :: t(), pos :: {number(), number()}, id :: any()) :: t()
   def insert(%__MODULE__{cell_size: size, grid: grid} = hash, {x, y}, id) do
-    # Calcula a coordenada da célula na grade dividindo a posição pelo tamanho da célula.
+    # Calculate the grid cell coordinate by dividing the position by the cell size.
     cell_x = trunc(x / size)
     cell_y = trunc(y / size)
     key = {cell_x, cell_y}
 
-    # Adiciona o ID ao MapSet da célula correspondente.
+    # Add the ID to the MapSet of the corresponding cell.
     updated_grid =
       Map.update(grid, key, MapSet.new([id]), fn set ->
         MapSet.put(set, id)
       end)
 
-    %__MODULE__{hash | grid: updated_grid}
+    %__MODULE__{ hash | grid: updated_grid}
   end
 
   @doc """
-  Consulta a grade e retorna uma lista de todos os IDs de objetos encontrados dentro
-  do `radius` de busca a partir do ponto `{x, y}`.
+  Queries the grid and returns a list of all object IDs found within the
+  search `radius` from the point `{x, y}`.
   """
+  @spec query(hash :: t(), pos :: {number(), number()}, radius :: number()) :: list(any())
   def query(%__MODULE__{cell_size: size, grid: grid}, {x, y}, radius) do
-    # Calcula o intervalo de células (bounding box) a ser verificado.
+    # Calculate the range of cells (a bounding box) to be checked.
     min_x = trunc((x - radius) / size)
     max_x = trunc((x + radius) / size)
     min_y = trunc((y - radius) / size)
     max_y = trunc((y + radius) / size)
 
-    # Itera sobre todas as células no bounding box e coleta todos os IDs.
+    # Iterate over all cells in the bounding box and collect all IDs.
     min_x..max_x
     |> Enum.flat_map(fn cx ->
       Enum.flat_map(min_y..max_y, fn cy ->

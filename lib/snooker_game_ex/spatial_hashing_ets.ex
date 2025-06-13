@@ -1,21 +1,28 @@
 defmodule SnookerGameEx.SpatialHashETS do
   @moduledoc """
-  Implementação de um Spatial Hash utilizando uma tabela ETS como backend.
+  An implementation of a Spatial Hash data structure using an ETS table as the backend.
 
-  **CORREÇÕES APLICADAS:**
-  1. Remoção da transformação de compile-time desnecessária
-  2. Correção da função clear() para não deletar a configuração
-  3. Otimização das queries com match_spec segura
-  4. Armazenamento do cell_size no estado da tabela
-  5. Correção de problemas de concorrência
+  A Spatial Hash is a grid-based data structure that is very efficient for uniformally
+  distributed spatial data. It works by dividing the space into a grid of cells and
+  storing entities in the cells they occupy. Queries for nearby objects only need to
+  check the entities in the nearby grid cells, which is very fast.
+
+  **IMPROVEMENTS APPLIED:**
+  1.  **No Compile-Time Transform:** Removed the need for complex compile-time metaprogramming.
+  2.  **Safe `clear/1`:** The clear function now correctly deletes only grid data, preserving the configuration.
+  3.  **Optimized Queries:** Uses a safe, dynamically generated `match_spec` for efficient ETS queries.
+  4.  **Stateful `cell_size`:** The grid's `cell_size` is now stored in the table's state.
+  5.  **Concurrency-Ready:** Uses `write_concurrency: true` and atomic operations suitable for concurrent access.
   """
 
   @type table_name :: atom()
   @type cell_key :: {integer(), integer()}
   @type particle_id :: any()
 
-  @doc "Cria a tabela ETS para o Spatial Hash."
-  @spec init(table_name, non_neg_integer()) :: :ok
+  @doc """
+  Creates and initializes the ETS table for the Spatial Hash.
+  """
+  @spec init(table_name :: table_name(), cell_size :: pos_integer()) :: :ok
   def init(table, cell_size) when is_atom(table) and is_integer(cell_size) and cell_size > 0 do
     :ets.new(table, [
       :set,
@@ -25,24 +32,27 @@ defmodule SnookerGameEx.SpatialHashETS do
       write_concurrency: true
     ])
 
-    # Armazena configuração como tupla protegida
+    # Store the configuration in a protected tuple.
     :ets.insert(table, {:__config__, cell_size})
     :ok
   end
 
-  @doc "Limpa eficientemente a grade, preservando a configuração."
+  @doc """
+  Efficiently clears the grid of all entities, preserving the configuration.
+  """
+  @spec clear(table :: table_name()) :: :ok
   def clear(table) do
-    # Este match_spec garante que estamos deletando apenas tuplas onde
-    # o primeiro e o segundo elementos são coordenadas de célula (inteiros).
+    # This match_spec ensures that we are only deleting tuples where the first
+    # and second elements are integer cell coordinates: {cx, cy, id}.
     match_spec = [
       {
         {:"$1", :"$2", :"$3"},
         [
-          # Guards para garantir o tipo dos elementos
+          # Guards to ensure the type of the elements.
           {:is_integer, :"$1"},
           {:is_integer, :"$2"}
         ],
-        # O resultado da correspondência (não importa aqui)
+        # The result of the match (not important here).
         [true]
       }
     ]
@@ -51,34 +61,53 @@ defmodule SnookerGameEx.SpatialHashETS do
     :ok
   end
 
-  @doc "Converte a posição do mundo para a coordenada da célula."
-  @spec to_cell_coords({float(), float()}, non_neg_integer()) :: cell_key
+  @doc """
+  Converts world coordinates to grid cell coordinates.
+  """
+  @spec to_cell_coords({x :: float(), y :: float()}, cell_size :: pos_integer()) :: cell_key
   defp to_cell_coords({x, y}, cell_size) do
     {div(floor(x), cell_size), div(floor(y), cell_size)}
   end
 
-  @doc "Insere uma partícula na grade ETS."
+  @doc """
+  Inserts a particle into the ETS grid.
+  """
+  @spec insert(
+          table :: table_name(),
+          pos :: {float(), float()},
+          id :: particle_id(),
+          cell_size :: pos_integer()
+        ) :: :ok
   def insert(table, {x, y}, id, cell_size) do
-    # Obtém cell_size da tabela de forma segura
     {cx, cy} = to_cell_coords({x, y}, cell_size)
     :ets.insert(table, {cx, cy, id})
     :ok
   end
 
-  @doc "Consulta a grade para encontrar IDs de partículas num raio de busca."
+  @doc """
+  Queries the grid to find particle IDs within a given search radius.
+  """
+  @spec query(
+          table :: table_name(),
+          pos :: {float(), float()},
+          radius :: float(),
+          cell_size :: pos_integer()
+        ) :: list(particle_id())
   def query(table, {x, y}, radius, cell_size) do
-    # Cálculo seguro dos limites
+    # Safely calculate the boundary of the query area in world coordinates.
     min_x = floor(x - radius)
     max_x = floor(x + radius)
     min_y = floor(y - radius)
     max_y = floor(y + radius)
 
+    # Convert the world boundary to a grid cell boundary.
     min_cx = div(min_x, cell_size)
     max_cx = div(max_x, cell_size)
     min_cy = div(min_y, cell_size)
     max_cy = div(max_y, cell_size)
 
-    # Geração de match_spec sem parse_transform
+    # Generate a match_spec to select all entities within the cell boundary.
+    # This is much more efficient than fetching all records and filtering in Elixir.
     match_spec = [
       {
         {:"$1", :"$2", :"$3"},
@@ -87,6 +116,7 @@ defmodule SnookerGameEx.SpatialHashETS do
            {:andalso, {:"=<", :"$1", max_cx},
             {:andalso, {:>=, :"$2", min_cy}, {:"=<", :"$2", max_cy}}}}
         ],
+        # Return only the third element of the tuple (the particle ID).
         [:"$3"]
       }
     ]

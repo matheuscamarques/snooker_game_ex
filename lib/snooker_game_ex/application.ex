@@ -1,4 +1,10 @@
 defmodule SnookerGameEx.Application do
+  @moduledoc """
+  The main application module for the Snooker Game.
+
+  It starts and supervises all the necessary processes for the game to run,
+  including the web endpoint, PubSub, and the core game simulation engine.
+  """
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
@@ -18,8 +24,8 @@ defmodule SnookerGameEx.Application do
       # {SnookerGameEx.Worker, arg},
       # Start to serve requests, typically the last entry
       SnookerGameExWeb.Endpoint,
-      # Ordem Corrigida: Inicia o Engine antes do ParticleSupervisor
-      # para garantir que a tabela ETS exista quando as partículas forem inicializadas.
+      # Corrected Order: Start the Engine before the ParticleSupervisor
+      # to ensure the ETS table exists when particles are initialized.
       SnookerGameEx.CollisionEngine,
       SnookerGameEx.ParticleSupervisor
     ]
