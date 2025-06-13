@@ -60,7 +60,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
 
         # This logic correctly centers the rows of the triangle
         # based on the apex position.
-        start_y = apex_pos.y - ((num_balls_in_row - 1) * vertical_separation) / 2
+        start_y = apex_pos.y - (num_balls_in_row - 1) * vertical_separation / 2
 
         positions_in_row =
           for ball_in_row_index <- 0..(num_balls_in_row - 1) do

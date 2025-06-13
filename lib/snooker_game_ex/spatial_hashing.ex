@@ -48,7 +48,7 @@ defmodule SnookerGameEx.SpatialHash do
         MapSet.put(set, id)
       end)
 
-    %__MODULE__{ hash | grid: updated_grid}
+    %__MODULE__{hash | grid: updated_grid}
   end
 
   @doc """

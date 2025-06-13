@@ -134,7 +134,7 @@ defmodule SnookerGameEx.CollisionEngine do
   @spec update_simulation_loop(accumulator :: float(), state :: map()) :: float()
   def update_simulation_loop(accumulator, state) do
     # To prevent extreme lag, limit the number of simulation steps per visual frame.
-    max_steps_per_tick = 5
+    max_steps_per_tick = 1
     simulate_steps(accumulator, max_steps_per_tick, state)
   end
 
@@ -168,12 +168,18 @@ defmodule SnookerGameEx.CollisionEngine do
   def broadcast_move_command do
     :particle_data
     |> :ets.tab2list()
-    |> Enum.each(fn particle_tuple ->
-      id = elem(particle_tuple, Particle.get_attr_index(:id))
-      GenServer.call(Particle.via_tuple(id), {:move, @dt}, 5000)
-    end)
-    # The return value of Enum.each is :ok
+    |> Task.async_stream(
+      fn particle_tuple ->
+        id = elem(particle_tuple, Particle.get_attr_index(:id))
+        GenServer.call(Particle.via_tuple(id), {:move, @dt}, 5000)
+      end, timeout: 6000, max_concurrency: System.schedulers_online())
+    |> Stream.run()
+
     :ok
+  end
+
+  def handle_info(massage, state) do
+    {:noreply, state}
   end
 
   @doc """
@@ -217,6 +223,7 @@ defmodule SnookerGameEx.CollisionEngine do
           dispatch_collision_updates(ids, collision_updates)
         end
       end
+
       :ok
     end
   end

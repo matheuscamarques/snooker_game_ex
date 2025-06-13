@@ -15,7 +15,9 @@ defmodule SnookerGameEx.Particle do
   @simulation_topic "particle_updates"
 
   @typedoc "A tuple representing the full state of a particle."
-  @type particle_state :: {id :: any(), pos :: list(float()), vel :: list(float()), radius :: float(), mass :: float(), color :: String.t()}
+  @type particle_state ::
+          {id :: any(), pos :: list(float()), vel :: list(float()), radius :: float(),
+           mass :: float(), color :: String.t()}
 
   @doc "Starts a particle GenServer."
   @spec start_link(list) :: GenServer.on_start()

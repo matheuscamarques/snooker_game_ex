@@ -181,10 +181,14 @@ defmodule SnookerGameEx.Quadtree do
     hh = pb.h / 2
 
     children_boundaries = %{
-      ne: %{x: cx, y: pb.y, w: hw, h: hh}, # Northeast
-      nw: %{x: pb.x, y: pb.y, w: hw, h: hh}, # Northwest
-      se: %{x: cx, y: cy, w: hw, h: hh}, # Southeast
-      sw: %{x: pb.x, y: cy, w: hw, h: hh}  # Southwest
+      # Northeast
+      ne: %{x: cx, y: pb.y, w: hw, h: hh},
+      # Northwest
+      nw: %{x: pb.x, y: pb.y, w: hw, h: hh},
+      # Southeast
+      se: %{x: cx, y: cy, w: hw, h: hh},
+      # Southwest
+      sw: %{x: pb.x, y: cy, w: hw, h: hh}
     }
 
     # Create new ETS records for each child node
