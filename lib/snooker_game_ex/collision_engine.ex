@@ -42,6 +42,34 @@ defmodule SnookerGameEx.CollisionEngine do
   @quadtree_capacity 4
   @quadtree_max_depth 8
 
+  @pocket_radius 25.0
+  @pockets [
+    # Cantos
+    %{pos: [@border_width, @border_width]},
+    %{pos: [@canvas_width - @border_width, @border_width]},
+    %{pos: [@border_width, @canvas_height - @border_width]},
+    %{pos: [@canvas_width - @border_width, @canvas_height - @border_width]},
+    # Meios
+    %{pos: [@canvas_width / 2, @border_width]},
+    %{pos: [@canvas_width / 2, @canvas_height - @border_width]}
+  ]
+
+  @doc "Returns the radius of the pockets."
+  @spec pocket_radius() :: float()
+  def pocket_radius, do: @pocket_radius
+
+  @doc "Returns a list of pocket positions."
+  @spec pockets() :: list(map())
+  def pockets, do: @pockets
+
+  @friction_coefficient 0.3
+  @spec friction_coefficient() :: float()
+  def friction_coefficient, do: @friction_coefficient
+
+  @doc "Returns the default mass for a particle."
+  @spec particle_mass() :: integer()
+  def particle_mass, do: @particle_mass
+
   # --- Public API ---
 
   @doc "Returns the default mass for a particle."
@@ -172,7 +200,10 @@ defmodule SnookerGameEx.CollisionEngine do
       fn particle_tuple ->
         id = elem(particle_tuple, Particle.get_attr_index(:id))
         GenServer.call(Particle.via_tuple(id), {:move, @dt}, 5000)
-      end, timeout: 6000, max_concurrency: System.schedulers_online())
+      end,
+      timeout: 6000,
+      max_concurrency: System.schedulers_online()
+    )
     |> Stream.run()
 
     :ok

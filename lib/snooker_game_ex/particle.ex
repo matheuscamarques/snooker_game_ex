@@ -12,6 +12,7 @@ defmodule SnookerGameEx.Particle do
   alias SnookerGameEx.Physics
   alias SnookerGameEx.CollisionEngine
 
+  @game_events_topic "game_events"
   @simulation_topic "particle_updates"
 
   @typedoc "A tuple representing the full state of a particle."
@@ -63,36 +64,68 @@ defmodule SnookerGameEx.Particle do
   """
   @impl true
   def handle_call({:move, dt}, _from, current_state) do
-    # If the particle is nearly stationary, stop it completely.
+    # Se a partícula estiver quase parada, pare-a completamente.
     if Physics.velocity_magnitude(elem(current_state, 2)) < 0.01 do
       new_state = put_elem(current_state, get_attr_index(:vel), [0.0, 0.0])
       :ets.insert(:particle_data, new_state)
       broadcast_update(new_state)
       {:reply, :ok, new_state}
     else
-      # Otherwise, calculate its new position and handle wall collisions.
+      # --- LÓGICA DE MOVIMENTO COM ATRITO (ALTERADA) ---
       bounds = CollisionEngine.world_bounds()
-      {_id, pos, vel, radius, _mass, _color} = current_state
+      {id, pos, vel, radius, _mass, color} = current_state
 
-      [px, py] = pos
+      # --- INÍCIO DA APLICAÇÃO DO ATRITO ---
+      friction = CollisionEngine.friction_coefficient()
       [vx, vy] = vel
-      # Basic Euler integration for the new position.
-      new_pos_integrated = [px + vx * dt, py + vy * dt]
+
+      # Calcula um fator de amortecimento baseado no coeficiente e no tempo (dt)
+      # Isso garante que o atrito seja consistente em diferentes framerates.
+      damping_factor = :math.pow(1.0 - friction, dt)
+
+      # Aplica o amortecimento para reduzir a velocidade
+      damped_vx = vx * damping_factor
+      damped_vy = vy * damping_factor
+      damped_vel = [damped_vx, damped_vy]
+      # --- FIM DA APLICAÇÃO DO ATRITO ---
+
+      # Calcula a nova posição e lida com colisões de parede,
+      # mas agora usando a velocidade já reduzida pelo atrito.
+      [px, py] = pos
+      new_pos_integrated = [px + damped_vx * dt, py + damped_vy * dt]
 
       {final_pos, final_vel} =
         Physics.handle_wall_collision(
-          %{pos: new_pos_integrated, vel: vel, radius: radius},
+          %{pos: new_pos_integrated, vel: damped_vel, radius: radius},
           bounds
         )
 
-      new_state =
-        current_state
-        |> put_elem(get_attr_index(:pos), final_pos)
-        |> put_elem(get_attr_index(:vel), final_vel)
+      # --- VERIFICAÇÃO DE CAÇAPA (lógica da questão anterior) ---
+      pockets = CollisionEngine.pockets()
+      pocket_radius = CollisionEngine.pocket_radius()
 
-      :ets.insert(:particle_data, new_state)
-      broadcast_update(new_state)
-      {:reply, :ok, new_state}
+      if Physics.pocketed?(final_pos, pockets, pocket_radius) do
+        # A BOLA FOI ENCAÇAPADA!
+        Phoenix.PubSub.broadcast(
+          SnookerGameEx.PubSub,
+          @game_events_topic,
+          {:ball_pocketed, id, color}
+        )
+
+        :ets.delete(:particle_data, id)
+        {:stop, :normal, :ok, current_state}
+      else
+        # A BOLA NÃO FOI ENCAÇAPADA (comportamento normal)
+        new_state =
+          current_state
+          |> put_elem(get_attr_index(:pos), final_pos)
+          # Atualiza o estado com a velocidade final (que inclui o efeito do atrito e das paredes)
+          |> put_elem(get_attr_index(:vel), final_vel)
+
+        :ets.insert(:particle_data, new_state)
+        broadcast_update(new_state)
+        {:reply, :ok, new_state}
+      end
     end
   end
 

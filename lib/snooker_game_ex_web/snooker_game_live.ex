@@ -30,27 +30,32 @@ defmodule SnookerGameExWeb.SnookerGameLive do
 
   @impl true
   def handle_info({:particle_moved, payload}, socket) do
-    # When a particle moves, push the event directly to the client's `CanvasHook`.
+    # Quando uma partícula se move, envia o evento diretamente para o CanvasHook.
     {:noreply, push_event(socket, "particle_moved", payload)}
   end
 
   @impl true
-  def handle_info({:ball_pocketed, _id, color}, socket) do
-    # Handles game logic when a ball is pocketed.
+  def handle_info({:ball_pocketed, id, color}, socket) do
+    # Lida com a lógica do jogo quando uma bola é encaçapada.
     message =
       if color == "white" do
-        "FOUL! White ball pocketed!"
+        "FALTA! Bola branca na caçapa!"
       else
-        "Ball #{color} pocketed!"
+        "Bola #{color} encaçapada!"
       end
 
+    # Exemplo simples de pontuação
     score =
       if color != "white" do
         socket.assigns.score + 1
       else
-        # Penalty for pocketing the white ball.
+        # Penalidade por encaçapar a bola branca.
         socket.assigns.score - 2
       end
+
+    # --- AÇÃO IMPORTANTE ---
+    # Envia um evento para o frontend para remover a bola da renderização.
+    socket = push_event(socket, "particle_removed", %{id: id})
 
     {:noreply, assign(socket, score: score, message: message)}
   end

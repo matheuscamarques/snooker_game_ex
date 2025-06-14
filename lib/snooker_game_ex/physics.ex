@@ -243,4 +243,20 @@ defmodule SnookerGameEx.Physics do
 
     {i, j, new_vel_i, new_vel_j, new_pos_i, new_pos_j}
   end
+
+  @doc """
+  Checks if a particle's position is within any of the defined pockets.
+  Returns `true` if pocketed, `false` otherwise.
+  """
+  @spec pocketed?([float()], list(map()), float()) :: boolean()
+  def pocketed?(particle_pos, pockets, pocket_radius) do
+    [px, py] = particle_pos
+
+    Enum.any?(pockets, fn pocket ->
+      [pocket_x, pocket_y] = pocket.pos
+      # Usa a fórmula da distância ao quadrado para ser mais eficiente (evita sqrt)
+      dist_sq = :math.pow(px - pocket_x, 2) + :math.pow(py - pocket_y, 2)
+      dist_sq < :math.pow(pocket_radius, 2)
+    end)
+  end
 end
