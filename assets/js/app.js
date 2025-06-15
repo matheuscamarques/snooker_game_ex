@@ -14,7 +14,7 @@ Hooks.CanvasHook = {
     this.camera = {
         pan: { x: this.canvas.width / 2, y: this.canvas.height / 2 },
         zoom: 1.0,
-        rotation: 0, // NOVO: Ângulo da câmera em radianos
+        rotation: 0,
         isPanning: false,
         lastMouse: { x: 0, y: 0 },
         MIN_ZOOM: 0.4,
@@ -53,7 +53,15 @@ Hooks.CanvasHook = {
 
     this.setupDPadListeners();
 
-    this.handleEvent("particle_moved", (payload) => this.particles.set(payload.id, payload));
+    this.handleEvent("particle_moved", (payload) => {
+      // CORREÇÃO: Mantém o estado visual completo da partícula entre as atualizações do servidor.
+      const existingParticle = this.particles.get(payload.id);
+      if (existingParticle) {
+        payload.lastRollAngle = existingParticle.lastRollAngle;
+        payload.lastTextureOffsetY = existingParticle.lastTextureOffsetY; // Preserva a posição da textura
+      }
+      this.particles.set(payload.id, payload);
+    });
     this.handleEvent("particle_removed", (payload) => {
       if (this.particles.has(payload.id)) this.particles.delete(payload.id);
     });
@@ -68,9 +76,133 @@ Hooks.CanvasHook = {
     this.canvas.removeEventListener("wheel", this.boundHandleWheel);
   },
 
-  // MUDANÇA: A função de rotação agora manipula o ângulo da câmera.
+  drawFrame() {
+    const now = performance.now();
+    const deltaTime = (now - this.lastFrameTime) / 1000;
+    this.lastFrameTime = now;
+    this.updatePanFromDpad(deltaTime);
+
+    const { ctx } = this;
+    const { width, height } = this.canvas;
+    const { pan, zoom, rotation } = this.camera;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate(rotation);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-pan.x, -pan.y);
+
+    this.drawTable(1000, 500);
+
+    this.particles.forEach((particle) => {
+      this.drawBall(particle);
+    });
+    
+    if (this.cueState.status === 'aiming') this.drawCue();
+    else if (this.cueState.status === 'striking') this.animateAndStrike();
+    
+    ctx.restore();
+    this.animationFrameId = requestAnimationFrame(() => this.drawFrame());
+  },
+
+  drawBall(particle) {
+    const { ctx } = this;
+    const { pos: [x, y], vel: [vx, vy], radius, color, spin_angle, roll_distance } = particle;
+    const { number, type, base_color } = color;
+
+    // --- 1. Determina a orientação e o deslocamento da textura ---
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    let rollAngle;
+    let textureOffsetY;
+
+    if (speed > 0.1) {
+        const dirX = vx / speed;
+        const dirY = vy / speed;
+        rollAngle = Math.atan2(dirY, dirX) - Math.PI / 2;
+        textureOffsetY = roll_distance % (Math.PI * 2 * radius);
+        
+        // Armazena o último estado visual quando a bola está se movendo
+        particle.lastRollAngle = rollAngle;
+        particle.lastTextureOffsetY = textureOffsetY;
+    } else {
+        // Usa o último estado visual quando a bola para
+        rollAngle = particle.lastRollAngle || 0;
+        textureOffsetY = particle.lastTextureOffsetY || 0;
+    }
+
+    // --- 2. Desenha a base da bola ---
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = base_color;
+    ctx.fill();
+
+    // --- 3. Desenha a Textura (Listra e Número) ---
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.clip();
+    
+    ctx.translate(x, y);
+    ctx.rotate(rollAngle);
+    ctx.rotate(spin_angle);
+
+    const circumference = Math.PI * 2 * radius;
+
+    if (type === 'stripe') {
+        const bandHeight = radius * 1.4;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(-radius, -bandHeight / 2 + textureOffsetY, radius * 2, bandHeight);
+        ctx.fillRect(-radius, -bandHeight / 2 + textureOffsetY - circumference, radius * 2, bandHeight);
+        ctx.fillRect(-radius, -bandHeight / 2 + textureOffsetY + circumference, radius * 2, bandHeight);
+    }
+
+    if (number > 0) {
+        const numCircleRadius = radius * 0.6;
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(0, textureOffsetY, numCircleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, textureOffsetY - circumference, numCircleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, textureOffsetY + circumference, numCircleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = 'black';
+        ctx.font = `bold ${radius * 0.95}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(number.toString(), 0, textureOffsetY);
+        ctx.fillText(number.toString(), 0, textureOffsetY - circumference);
+        ctx.fillText(number.toString(), 0, textureOffsetY + circumference);
+    }
+
+    ctx.restore();
+
+    // --- 4. Desenha o Brilho 3D ---
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    const gradient = ctx.createRadialGradient(
+      x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius
+    );
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // --- 5. Desenha o Contorno Final ---
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.lineWidth = 1 / this.camera.zoom;
+    ctx.stroke();
+  },
+
   rotateCamera() {
-    this.camera.rotation += Math.PI / 2; // Gira 90 graus
+    this.camera.rotation += Math.PI / 2;
   },
 
   setupDPadListeners() {
@@ -89,51 +221,26 @@ Hooks.CanvasHook = {
   updatePanFromDpad(deltaTime) {
     const { panState, PAN_SPEED, zoom, rotation } = this.camera;
     const moveAmount = (PAN_SPEED * deltaTime) / zoom;
-    
-    let moveX = 0;
-    let moveY = 0;
-
+    let moveX = 0, moveY = 0;
     if (panState.up) moveY -= moveAmount;
     if (panState.down) moveY += moveAmount;
     if (panState.left) moveX -= moveAmount;
     if (panState.right) moveX += moveAmount;
-    
     if (moveX === 0 && moveY === 0) return;
-
-    // MUDANÇA: Rotaciona o vetor de movimento para alinhar com a câmera
-    const cosR = Math.cos(rotation);
-    const sinR = Math.sin(rotation);
-
-    const worldMoveX = moveX * cosR - moveY * sinR;
-    const worldMoveY = moveX * sinR + moveY * cosR;
-
+    const cosR = Math.cos(rotation), sinR = Math.sin(rotation);
+    const worldMoveX = moveX * cosR - moveY * sinR, worldMoveY = moveX * sinR + moveY * cosR;
     this.camera.pan.x += worldMoveX;
     this.camera.pan.y += worldMoveY;
   },
 
-  // MUDANÇA: A transformação de tela para mundo agora considera a rotação.
   screenToWorld({ x, y }) {
     const { pan, zoom, rotation } = this.camera;
     const { width, height } = this.canvas;
-    
-    // 1. Coordenadas relativas ao centro da tela
-    const relX = x - width / 2;
-    const relY = y - height / 2;
-
-    // 2. Desfaz o zoom
-    const unscaledX = relX / zoom;
-    const unscaledY = relY / zoom;
-
-    // 3. Desfaz a rotação
-    const cosR = Math.cos(-rotation); // Rotação inversa
-    const sinR = Math.sin(-rotation);
-    const rotatedX = unscaledX * cosR - unscaledY * sinR;
-    const rotatedY = unscaledX * sinR + unscaledY * cosR;
-
-    // 4. Adiciona o pan da câmera para obter as coordenadas do mundo
-    const worldX = rotatedX + pan.x;
-    const worldY = rotatedY + pan.y;
-
+    const relX = x - width / 2, relY = y - height / 2;
+    const unscaledX = relX / zoom, unscaledY = relY / zoom;
+    const cosR = Math.cos(-rotation), sinR = Math.sin(-rotation);
+    const rotatedX = unscaledX * cosR - unscaledY * sinR, rotatedY = unscaledX * sinR + unscaledY * cosR;
+    const worldX = rotatedX + pan.x, worldY = rotatedY + pan.y;
     return { x: worldX, y: worldY };
   },
 
@@ -149,51 +256,9 @@ Hooks.CanvasHook = {
   resetView() {
       this.camera.pan = { x: 1000 / 2, y: 500 / 2 };
       this.camera.zoom = 1.0;
-      this.camera.rotation = 0; // Também reseta a rotação
-  },
-  
-  // MUDANÇA: A renderização agora aplica a rotação da câmera.
-  drawFrame() {
-    const now = performance.now();
-    const deltaTime = (now - this.lastFrameTime) / 1000;
-    this.lastFrameTime = now;
-    this.updatePanFromDpad(deltaTime);
-
-    const { ctx } = this;
-    const { width, height } = this.canvas;
-    const { pan, zoom, rotation } = this.camera;
-
-    ctx.clearRect(0, 0, width, height);
-    ctx.save();
-
-    // A ordem da transformação é crucial!
-    ctx.translate(width / 2, height / 2); // 1. Vai para o centro da tela
-    ctx.rotate(rotation);                 // 2. Rotaciona a "câmera"
-    ctx.scale(zoom, zoom);                // 3. Aplica o zoom
-    ctx.translate(-pan.x, -pan.y);        // 4. Move o mundo para a posição da câmera
-
-    this.drawTable(1000, 500);
-
-    this.particles.forEach((particle) => {
-      const { pos: [x, y], radius, color } = particle;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 1 / zoom;
-      ctx.stroke();
-    });
-    
-    if (this.cueState.status === 'aiming') this.drawCue();
-    else if (this.cueState.status === 'striking') this.animateAndStrike();
-    
-    ctx.restore();
-    this.animationFrameId = requestAnimationFrame(() => this.drawFrame());
+      this.camera.rotation = 0;
   },
 
-  // Funções restantes (drawTable, drawCue, handlers, etc.)
-  // Nenhuma mudança necessária abaixo desta linha
   drawTable(worldWidth, worldHeight) {
     const { ctx } = this;
     ctx.fillStyle = "#1a6d38";
@@ -221,7 +286,7 @@ Hooks.CanvasHook = {
   drawCue(pullbackOverride = null) {
     const { ctx } = this;
     const { start, end } = this.cueState;
-    const whiteBall = Array.from(this.particles.values()).find(p => p.color === "white");
+    const whiteBall = Array.from(this.particles.values()).find(p => p.color.type === "cue");
     if (!whiteBall) { this.cueState.status = 'inactive'; return; }
 
     const CUE_LENGTH = 450, CUE_BUTT_WIDTH = 16, CUE_TIP_WIDTH = 7, PULLBACK_OFFSET = 10;
@@ -255,7 +320,8 @@ Hooks.CanvasHook = {
     ctx.fillStyle = gradient;
     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)"; ctx.lineWidth = 1 / this.camera.zoom; ctx.stroke();
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)"; ctx.lineWidth = 1 / this.camera.zoom;
+    ctx.stroke();
   },
 
   animateAndStrike() {
@@ -292,14 +358,10 @@ Hooks.CanvasHook = {
   handleMouseMove(e) {
     const mousePos = this.getMousePos(e);
     if (this.camera.isPanning) {
-        // O pan com o mouse também precisa respeitar a rotação
-        const cosR = Math.cos(this.camera.rotation);
-        const sinR = Math.sin(this.camera.rotation);
-        const dx = (mousePos.x - this.camera.lastMouse.x) / this.camera.zoom;
-        const dy = (mousePos.y - this.camera.lastMouse.y) / this.camera.zoom;
+        const cosR = Math.cos(this.camera.rotation), sinR = Math.sin(this.camera.rotation);
+        const dx = (mousePos.x - this.camera.lastMouse.x) / this.camera.zoom, dy = (mousePos.y - this.camera.lastMouse.y) / this.camera.zoom;
         this.camera.pan.x -= dx * cosR + dy * sinR;
         this.camera.pan.y -= dy * cosR - dx * sinR;
-
     } else if (this.cueState.status === 'aiming') {
         this.updateAim(this.screenToWorld(mousePos));
     }
@@ -339,7 +401,7 @@ Hooks.CanvasHook = {
    
   startAiming({x, y}) {
     if (this.cueState.status !== 'inactive' || this.camera.isPanning) return;
-    const whiteBall = Array.from(this.particles.values()).find(p => p.color === "white");
+    const whiteBall = Array.from(this.particles.values()).find(p => p.color.type === "cue");
     if (whiteBall) {
       const [wx, wy] = whiteBall.pos;
       const distance = Math.sqrt((x - wx)**2 + (y - wy)**2);
