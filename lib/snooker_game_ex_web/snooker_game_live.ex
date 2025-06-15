@@ -65,8 +65,15 @@ defmodule SnookerGameExWeb.SnookerGameLive do
     # This event is triggered from the `CanvasHook` when the user strikes the cue ball.
     # We cast a message to the white ball (ID 0) to apply the force.
     # The multiplication factor is a "magic number" to tune the shot strength.
-    GenServer.cast(SnookerGameEx.Particle.via_tuple(0), {:apply_force, [x * 21, y * 21]})
+    GenServer.cast(SnookerGameEx.Particle.via_tuple(0), {:apply_force, [x * 15, y * 15]})
     {:noreply, assign(socket, message: "Playing...")}
+  end
+
+  @impl true
+  def handle_event("reset_game", _, socket) do
+    # Adicione aqui a lógica para reiniciar o estado do jogo no backend
+    SnookerGameEx.Engine.reset_simulation()
+    {:noreply, assign(socket, score: 0, message: "Jogo Reiniciado!")}
   end
 
   def render(assigns) do
@@ -75,13 +82,29 @@ defmodule SnookerGameExWeb.SnookerGameLive do
       <div class="game-header">
         <h2>Professional Snooker</h2>
         <div class="game-info">
-          <span>Score: {@score}</span>
-          <span>{@message}</span>
+          <span>Score: <%= @score %></span>
+          <span><%= @message %></span>
         </div>
       </div>
 
       <div id="simulation-wrapper" phx-hook="CanvasHook">
-        <canvas id="physics-canvas" width="1000" height="500" />
+        <div id="canvas-wrapper">
+          <canvas id="physics-canvas" width="1000" height="500" />
+        </div>
+
+        <div class="camera-controls">
+          <button id="rotate-btn" title="Rotacionar Tela">🔄</button>
+          <button id="zoom-in-btn" title="Zoom In">+</button>
+          <button id="zoom-out-btn" title="Zoom Out">-</button>
+          <button id="reset-view-btn" title="Resetar Visão">🗘</button>
+        </div>
+
+        <div id="d-pad-controls">
+          <button id="d-pad-up">▲</button>
+          <button id="d-pad-left">◀</button>
+          <button id="d-pad-right">▶</button>
+          <button id="d-pad-down">▼</button>
+        </div>
       </div>
 
       <div class="game-controls">

@@ -3,19 +3,34 @@
 @import "tailwindcss/utilities";
 
 /* This file is for your main application CSS */
+body {
+  background-color: #282c34;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  font-family: sans-serif;
+}
+
 .game-container {
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
 }
 
 .game-header {
   width: 100%;
+  max-width: 1000px;
   display: flex;
   justify-content: space-between;
-  padding: 10px;
-  background: #333;
+  align-items: center;
+  padding: 10px 20px;
+  background: #21252b;
   color: white;
+  border-radius: 8px;
+  margin-bottom: 20px;
 }
 
 .game-info {
@@ -23,17 +38,107 @@
   gap: 20px;
 }
 
+#simulation-wrapper {
+  position: relative;
+  width: 1000px;
+  max-width: 95vw;
+}
+
+#canvas-wrapper {
+  width: 100%;
+  padding-top: 50%; /* Proporção 2:1 (1000x500) */
+  position: relative;
+  transition: all 0.3s ease-in-out;
+  border-radius: 10px;
+  overflow: hidden; /* Garante que o canvas não "vaze" durante a animação */
+}
+
 #physics-canvas {
   border: 2px solid #555;
-  border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  cursor: grab;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
+
+#canvas-wrapper.rotated {
+  padding-top: 200%; /* Inverte a proporção para 1:2 */
+}
+
+.camera-controls {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
+}
+
+.camera-controls button {
+  width: 45px;
+  height: 45px;
+  font-size: 22px;
+  font-weight: bold;
+  background: rgba(0, 0, 0, 0.4);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.camera-controls button:hover {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+#d-pad-controls {
+  position: absolute;
+  bottom: 15px;
+  left: 15px;
+  width: 150px;
+  height: 150px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 5px;
+  z-index: 10;
+}
+
+#d-pad-controls button {
+  background: rgba(0, 0, 0, 0.4);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  font-size: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.2s;
+}
+
+#d-pad-controls button:active {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+#d-pad-up { grid-area: 1 / 2 / 2 / 3; }
+#d-pad-left { grid-area: 2 / 1 / 3 / 2; }
+#d-pad-right { grid-area: 2 / 3 / 3 / 4; }
+#d-pad-down { grid-area: 3 / 2 / 4 / 3; }
 
 .game-controls {
   margin-top: 20px;
 }
 
-button {
+.game-controls button {
   padding: 10px 20px;
   font-size: 16px;
   background: #4CAF50;
@@ -41,4 +146,9 @@ button {
   border: none;
   border-radius: 5px;
   cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.game-controls button:hover {
+  background: #45a049;
 }
