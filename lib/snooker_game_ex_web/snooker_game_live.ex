@@ -8,6 +8,8 @@ defmodule SnookerGameExWeb.SnookerGameLive do
   """
   use SnookerGameExWeb, :live_view
 
+  alias SnookerGameEx.{CollisionEngine, ParticleSupervisor}
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -59,6 +61,12 @@ defmodule SnookerGameExWeb.SnookerGameLive do
   end
 
   @impl true
+  def handle_event("hold_ball", id, socket) do
+    GenServer.cast(SnookerGameEx.Particle.via_tuple(id), :hold)
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("apply_force", %{"x" => x, "y" => y}, socket) do
     GenServer.cast(SnookerGameEx.Particle.via_tuple(0), {:apply_force, [x * 15, y * 15]})
     {:noreply, assign(socket, message: "Playing...")}
@@ -66,13 +74,13 @@ defmodule SnookerGameExWeb.SnookerGameLive do
 
   @impl true
   def handle_event("reset_game", _, socket) do
-    # This should trigger a restart of the simulation processes.
-    # A simple way is to have a function in your Application module or a dedicated Engine module.
-    # For now, we assume a function exists that can restart the supervisor.
-    # SnookerGameEx.Engine.reset_simulation()
+    ParticleSupervisor.restart()
+    CollisionEngine.restart()
+
     {:noreply, assign(socket, score: 0, message: "Jogo Reiniciado!")}
   end
 
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="game-container">

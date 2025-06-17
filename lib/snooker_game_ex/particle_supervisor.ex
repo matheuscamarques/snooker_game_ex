@@ -54,13 +54,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
   @impl true
   def init(_init_arg) do
     # Creates the ETS table that will store all particle state data for quick access.
-    :ets.new(:particle_data, [
-      :set,
-      :public,
-      :named_table,
-      read_concurrency: true,
-      write_concurrency: true
-    ])
+    maybe_create_ets_table()
 
     bounds = SnookerGameEx.CollisionEngine.world_bounds()
     radius = SnookerGameEx.CollisionEngine.particle_radius()
@@ -121,6 +115,18 @@ defmodule SnookerGameEx.ParticleSupervisor do
     Supervisor.init(children, strategy: :one_for_one, restart: :transient)
   end
 
+  defp maybe_create_ets_table do
+    if :ets.whereis(:particle_data) == :undefined do
+      :ets.new(:particle_data, [
+        :set,
+        :public,
+        :named_table,
+        read_concurrency: true,
+        write_concurrency: true
+      ])
+    end
+  end
+
   # --- Private Helper ---
 
   # The 'color' parameter is now a map containing all visual data for the ball.
@@ -144,4 +150,9 @@ defmodule SnookerGameEx.ParticleSupervisor do
       type: :worker
     }
   end
+
+  @doc """
+  Restart the supervisor, putting all particles in their initial states
+  """
+  def restart, do: Supervisor.stop(__MODULE__)
 end
