@@ -69,6 +69,11 @@ defmodule SnookerGameEx.CollisionEngine do
      }}
   end
 
+  @doc """
+  Restarts this supervisor
+  """
+  def restart, do: Supervisor.stop(__MODULE__)
+
   @impl true
   def handle_info(:tick, state) do
     current_time = System.monotonic_time()
