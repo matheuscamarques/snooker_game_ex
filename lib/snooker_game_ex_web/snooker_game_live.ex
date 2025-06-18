@@ -59,6 +59,12 @@ defmodule SnookerGameExWeb.SnookerGameLive do
   end
 
   @impl true
+  def handle_event("hold_ball", id, socket) do
+    GenServer.cast(SnookerGameEx.Particle.via_tuple(id), :hold)
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("apply_force", %{"x" => x, "y" => y}, socket) do
     GenServer.cast(SnookerGameEx.Particle.via_tuple(0), {:apply_force, [x * 15, y * 15]})
     {:noreply, assign(socket, message: "Playing...")}

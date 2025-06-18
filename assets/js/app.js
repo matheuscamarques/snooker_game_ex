@@ -403,6 +403,7 @@ Hooks.CanvasHook = {
     if (this.cueState.status !== 'inactive' || this.camera.isPanning) return;
     const whiteBall = Array.from(this.particles.values()).find(p => p.color.type === "cue");
     if (whiteBall) {
+      this.pushEvent("hold_ball", 0);
       const [wx, wy] = whiteBall.pos;
       const distance = Math.sqrt((x - wx)**2 + (y - wy)**2);
       if (distance <= whiteBall.radius + 30 / this.camera.zoom) {

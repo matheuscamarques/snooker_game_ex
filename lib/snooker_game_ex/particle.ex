@@ -120,6 +120,20 @@ defmodule SnookerGameEx.Particle do
   end
 
   @impl true
+  def handle_cast(:hold, current_state) do
+    new_velocity = [0, 0]
+
+    new_state =
+      current_state
+      |> put_elem(get_attr_index(:vel), new_velocity)
+      |> put_elem(get_attr_index(:spin_angle), 0.0)
+      |> put_elem(get_attr_index(:roll_distance), 0.0)
+
+    :ets.insert(:particle_data, new_state)
+    {:noreply, new_state}
+  end
+
+  @impl true
   def handle_cast({:apply_force, [fx, fy]}, current_state) do
     {_id, _pos, [vx, vy], _radius, mass, _color, _spin, _roll} = current_state
     new_velocity = [vx + fx / mass, vy + fy / mass]
