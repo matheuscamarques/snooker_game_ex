@@ -127,7 +127,7 @@ defmodule SnookerGameEx.SpatialHash do
 
   @doc "Calcula o intervalo de coordenadas de células que um envelope sobrepõe."
   @spec get_cell_range(envelope, map) :: {%Range{}, %Range{}}
-  defp get_cell_range(envelope, config) do
+  def get_cell_range(envelope, config) do
     %{bounds: bounds, cell_size: cell_size} = config
 
     min_cx = get_cell_coord(envelope.min_x, bounds.x, cell_size)
@@ -140,7 +140,7 @@ defmodule SnookerGameEx.SpatialHash do
 
   @doc "Converte uma coordenada do mundo para uma coordenada da grade."
   @spec get_cell_coord(number, number, number) :: integer
-  defp get_cell_coord(pos, origin, cell_size) do
+  def get_cell_coord(pos, origin, cell_size) do
     floor((pos - origin) / cell_size)
   end
 end
