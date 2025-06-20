@@ -11,7 +11,6 @@ defmodule SnookerGameEx.CollisionEngine do
   alias SnookerGameEx.Particle
   alias SnookerGameEx.Physics
 
-  # ... (constantes permanecem as mesmas) ...
   @frame_interval_ms 16
   @dt @frame_interval_ms / 1000.0
   @resolution_iterations 10

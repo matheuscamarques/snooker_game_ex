@@ -55,7 +55,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
     game_id = Keyword.fetch!(opts, :game_id)
     ets_table = Keyword.fetch!(opts, :ets_table)
 
-    # CORREÇÃO: Removida a chamada para maybe_create_ets_table().
+    # Removida a chamada para maybe_create_ets_table().
     # A tabela ETS agora é criada pelo GameInstanceSupervisor com um nome
     # específico para o jogo e passada para este módulo via `opts`.
 
@@ -96,7 +96,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
       |> Enum.flat_map(& &1)
       |> Enum.take(15)
 
-    # CORREÇÃO: A lógica para criar os `children` foi simplificada e corrigida
+    # A lógica para criar os `children` foi simplificada e corrigida
     # para passar todos os argumentos necessários (`game_id`, `ets_table`, etc.)
     # para a função `particle_spec`.
 
@@ -127,7 +127,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
     Supervisor.init(children, strategy: :one_for_one)
   end
 
-  # CORREÇÃO: A função `maybe_create_ets_table` foi removida completamente.
+  # A função `maybe_create_ets_table` foi removida completamente.
   # Ela não é mais necessária, pois a tabela ETS é gerenciada pelo
   # GameInstanceSupervisor.
 
@@ -140,7 +140,7 @@ defmodule SnookerGameEx.ParticleSupervisor do
       start:
         {SnookerGameEx.Particle, :start_link,
          [
-           # CORREÇÃO: Adicionado `ets_table: ets_table` à lista de opções.
+           # Adicionado `ets_table: ets_table` à lista de opções.
            # O processo Particle precisa saber qual tabela ETS usar.
            [
              game_id: game_id,

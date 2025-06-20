@@ -48,10 +48,10 @@ defmodule SnookerGameEx.Particle do
         0.0
       }
 
-    # CORREÇÃO: Usando a variável `ets_table` correta.
+    # Usando a variável `ets_table` correta.
     :ets.insert(ets_table, particle_tuple)
 
-    # CORREÇÃO: Usando a variável `particle_tuple` correta e definindo o estado inicial do GenServer.
+    #d Usando a variável `particle_tuple` correta e definindo o estado inicial do GenServer.
     state = {game_id, ets_table, particle_tuple}
     {:ok, state}
   end
@@ -61,11 +61,11 @@ defmodule SnookerGameEx.Particle do
     if Physics.velocity_magnitude(elem(current_data, get_attr_index(:vel))) < 0.01 do
       new_data = put_elem(current_data, get_attr_index(:vel), [0.0, 0.0])
 
-      # CORREÇÃO: Usando `ets_table` e passando `game_id` para o broadcast.
+      # Usando `ets_table` e passando `game_id` para o broadcast.
       :ets.insert(ets_table, new_data)
       broadcast_update(game_id, new_data)
 
-      # CORREÇÃO: Retornando a estrutura de estado completa e correta.
+      # Retornando a estrutura de estado completa e correta.
       new_state = {game_id, ets_table, new_data}
       {:reply, :ok, new_state}
     else
@@ -111,18 +111,15 @@ defmodule SnookerGameEx.Particle do
           |> put_elem(get_attr_index(:spin_angle), new_spin_angle)
           |> put_elem(get_attr_index(:roll_distance), new_roll_distance)
 
-        # CORREÇÃO: Usando a variável `new_data` correta.
         :ets.insert(ets_table, new_data)
         broadcast_update(game_id, new_data)
 
-        # CORREÇÃO: Retornando a estrutura de estado completa e correta.
         new_state = {game_id, ets_table, new_data}
         {:reply, :ok, new_state}
       end
     end
   end
 
-  # CORREÇÃO: Todos os handle_cast foram atualizados para usar a estrutura de estado correta.
   @impl true
   def handle_cast(
         {:update_after_collision, new_velocity, new_position},
