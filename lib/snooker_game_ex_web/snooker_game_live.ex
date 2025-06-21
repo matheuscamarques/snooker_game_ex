@@ -6,21 +6,26 @@ defmodule SnookerGameExWeb.SnookerGameLive do
   subscribes to game state updates from the backend via PubSub, and pushes
   those updates to the client for rendering on the HTML canvas.
   """
+  alias SnookerGameEx.GameSupervisor
   use SnookerGameExWeb, :live_view
 
-  alias SnookerGameEx.{CollisionEngine, ParticleSupervisor}
-
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(%{"game_id" => game_id}, _session, socket) do
+    # Inicia o jogo para este ID se ainda não estiver rodando
+    GameSupervisor.start_game(game_id)
+
     if connected?(socket) do
-      Phoenix.PubSub.subscribe(SnookerGameEx.PubSub, "particle_updates")
-      Phoenix.PubSub.subscribe(SnookerGameEx.PubSub, "game_events")
+      # Inscreve-se nos tópicos específicos do jogo
+      Phoenix.PubSub.subscribe(SnookerGameEx.PubSub, "particle_updates:#{game_id}")
+      Phoenix.PubSub.subscribe(SnookerGameEx.PubSub, "game_events:#{game_id}")
     end
 
     socket =
       assign(socket,
         score: 0,
-        message: "Ready to Play"
+        message: "Bem-vindo à sala #{game_id}!",
+        # Armazena o ID do jogo no socket
+        game_id: game_id
       )
 
     {:ok, socket}
@@ -62,21 +67,26 @@ defmodule SnookerGameExWeb.SnookerGameLive do
 
   @impl true
   def handle_event("hold_ball", id, socket) do
-    GenServer.cast(SnookerGameEx.Particle.via_tuple(id), :hold)
+    # Passa o game_id ao interagir com a partícula
+    GenServer.cast(SnookerGameEx.Particle.via_tuple(socket.assigns.game_id, id), :hold)
     {:noreply, socket}
   end
 
   @impl true
   def handle_event("apply_force", %{"x" => x, "y" => y}, socket) do
-    GenServer.cast(SnookerGameEx.Particle.via_tuple(0), {:apply_force, [x * 15, y * 15]})
-    {:noreply, assign(socket, message: "Playing...")}
+    # A bola branca (ID 0) também precisa do game_id
+    GenServer.cast(
+      SnookerGameEx.Particle.via_tuple(socket.assigns.game_id, 0),
+      {:apply_force, [x * 15, y * 15]}
+    )
+
+    {:noreply, assign(socket, message: "Jogando...")}
   end
 
   @impl true
   def handle_event("reset_game", _, socket) do
-    ParticleSupervisor.restart()
-    CollisionEngine.restart()
-
+    # Reinicia o jogo específico
+    SnookerGameEx.GameInstanceSupervisor.restart(socket.assigns.game_id)
     {:noreply, assign(socket, score: 0, message: "Jogo Reiniciado!")}
   end
 

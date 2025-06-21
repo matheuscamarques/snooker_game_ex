@@ -1,66 +1,69 @@
 defmodule SnookerGameEx.ParticleSupervisor do
   @moduledoc """
   A dynamic supervisor responsible for starting and managing the lifecycle
-  of `Particle` processes.
+  of `Particle` processes for a specific game instance.
   """
   use Supervisor
 
   @spacing_buffer 2.5
 
-  # Define the standard 8-ball pool set.
-  # Number 0 is the cue ball.
-  # Numbers 1-7 are solids.
-  # Number 8 is the 8-ball.
-  # Numbers 9-15 are stripes.
+  # Define o conjunto padrão de bolas de sinuca (8-ball).
   @pool_ball_set [
-    # Yellow
+    # Amarela
     %{number: 1, type: :solid, base_color: "#fdd835"},
-    # Blue
+    # Azul
     %{number: 2, type: :solid, base_color: "#1e88e5"},
-    # Red
+    # Vermelha
     %{number: 3, type: :solid, base_color: "#e53935"},
-    # Purple
+    # Roxa
     %{number: 4, type: :solid, base_color: "#8e24aa"},
-    # Orange
+    # Laranja
     %{number: 5, type: :solid, base_color: "#fb8c00"},
-    # Green
+    # Verde
     %{number: 6, type: :solid, base_color: "#43a047"},
-    # Maroon/Brown
+    # Marrom
     %{number: 7, type: :solid, base_color: "#5d4037"},
-    # Black
+    # Preta
     %{number: 8, type: :solid, base_color: "#212121"},
-    # Yellow Stripe
+    # Amarela Listrada
     %{number: 9, type: :stripe, base_color: "#fdd835"},
-    # Blue Stripe
+    # Azul Listrada
     %{number: 10, type: :stripe, base_color: "#1e88e5"},
-    # Red Stripe
+    # Vermelha Listrada
     %{number: 11, type: :stripe, base_color: "#e53935"},
-    # Purple Stripe
+    # Roxa Listrada
     %{number: 12, type: :stripe, base_color: "#8e24aa"},
-    # Orange Stripe
+    # Laranja Listrada
     %{number: 13, type: :stripe, base_color: "#fb8c00"},
-    # Green Stripe
+    # Verde Listrada
     %{number: 14, type: :stripe, base_color: "#43a047"},
-    # Maroon/Brown Stripe
+    # Marrom Listrada
     %{number: 15, type: :stripe, base_color: "#5d4037"}
   ]
 
-  @doc "Starts the particle supervisor."
-  @spec start_link(any()) :: Supervisor.on_start()
-  def start_link(init_arg) do
-    Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+  @doc "Inicia o supervisor de partículas para um jogo específico."
+  def start_link(opts) do
+    game_id = Keyword.fetch!(opts, :game_id)
+    Supervisor.start_link(__MODULE__, opts, name: via_tuple(game_id))
   end
 
+  def via_tuple(game_id),
+    do: {:via, Registry, {SnookerGameEx.GameRegistry, {__MODULE__, game_id}}}
+
   @impl true
-  def init(_init_arg) do
-    # Creates the ETS table that will store all particle state data for quick access.
-    maybe_create_ets_table()
+  def init(opts) do
+    game_id = Keyword.fetch!(opts, :game_id)
+    ets_table = Keyword.fetch!(opts, :ets_table)
+
+    # Removida a chamada para maybe_create_ets_table().
+    # A tabela ETS agora é criada pelo GameInstanceSupervisor com um nome
+    # específico para o jogo e passada para este módulo via `opts`.
 
     bounds = SnookerGameEx.CollisionEngine.world_bounds()
     radius = SnookerGameEx.CollisionEngine.particle_radius()
     diameter = radius * 2
 
-    # --- Initial Ball Positioning ---
+    # --- Posicionamento Inicial das Bolas ---
     center_y = bounds.y + bounds.h / 2
     white_ball_pos = [bounds.x + 200, center_y]
     apex_pos = %{x: bounds.x + 700, y: center_y}
@@ -68,13 +71,12 @@ defmodule SnookerGameEx.ParticleSupervisor do
     row_separation = radius * :math.sqrt(3) + @spacing_buffer
     vertical_separation = diameter + @spacing_buffer
 
-    # Shuffle the pool ball set for a random rack each time.
+    # Embaralha o conjunto de bolas para uma organização aleatória a cada vez.
     rack_balls = Enum.shuffle(@pool_ball_set)
 
-    # Generates the positions for the 15 balls in the triangular rack.
+    # Gera as posições para as 15 bolas no triângulo.
     triangle_positions =
       Stream.unfold(0, fn
-        # Stop after 5 rows (1+2+3+4+5 = 15 balls)
         5 ->
           nil
 
@@ -94,55 +96,60 @@ defmodule SnookerGameEx.ParticleSupervisor do
       |> Enum.flat_map(& &1)
       |> Enum.take(15)
 
-    # Creates the child specs for the colored balls.
+    # A lógica para criar os `children` foi simplificada e corrigida
+    # para passar todos os argumentos necessários (`game_id`, `ets_table`, etc.)
+    # para a função `particle_spec`.
+
+    # Cria as especificações dos filhos para as bolas coloridas.
     colored_balls =
       Enum.zip(rack_balls, triangle_positions)
-      # Start IDs from 1, as 0 is the white ball.
+      # IDs começam em 1, já que 0 é a bola branca.
       |> Enum.with_index(1)
       |> Enum.map(fn {{ball_data, pos}, id} ->
-        # Pass the entire map of ball data to the particle spec.
-        particle_spec(id, ball_data, pos)
+        # Passa todos os dados necessários para a especificação da partícula.
+        particle_spec(game_id, ets_table, id, ball_data, pos)
       end)
 
-    # Combine all child specs for the supervisor.
+    # Combina todas as especificações dos filhos para o supervisor.
     children = [
-      # White Ball / Cue Ball (ID 0)
-      particle_spec(0, %{number: 0, type: :cue, base_color: "white"}, white_ball_pos)
-      # The rest of the balls
+      # Bola Branca (ID 0)
+      particle_spec(
+        game_id,
+        ets_table,
+        0,
+        %{number: 0, type: :cue, base_color: "white"},
+        white_ball_pos
+      )
+      # O resto das bolas
       | colored_balls
     ]
 
-    Supervisor.init(children, strategy: :one_for_one, restart: :transient)
+    Supervisor.init(children, strategy: :one_for_one)
   end
 
-  defp maybe_create_ets_table do
-    if :ets.whereis(:particle_data) == :undefined do
-      :ets.new(:particle_data, [
-        :set,
-        :public,
-        :named_table,
-        read_concurrency: true,
-        write_concurrency: true
-      ])
-    end
-  end
+  # A função `maybe_create_ets_table` foi removida completamente.
+  # Ela não é mais necessária, pois a tabela ETS é gerenciada pelo
+  # GameInstanceSupervisor.
 
-  # --- Private Helper ---
+  # --- Função Auxiliar Privada ---
 
-  # The 'color' parameter is now a map containing all visual data for the ball.
-  defp particle_spec(id, ball_data, pos) do
+  defp particle_spec(game_id, ets_table, id, ball_data, pos) do
     %{
-      id: id,
+      # O ID do filho para o supervisor deve ser único. Uma tupla com game_id e id da bola funciona bem.
+      id: {game_id, id},
       start:
         {SnookerGameEx.Particle, :start_link,
          [
+           # Adicionado `ets_table: ets_table` à lista de opções.
+           # O processo Particle precisa saber qual tabela ETS usar.
            [
+             game_id: game_id,
+             ets_table: ets_table,
              id: id,
              pos: pos,
              vel: [0, 0],
              radius: SnookerGameEx.CollisionEngine.particle_radius(),
              mass: SnookerGameEx.CollisionEngine.particle_mass(),
-             # Pass the whole map
              color: ball_data
            ]
          ]},
@@ -152,7 +159,13 @@ defmodule SnookerGameEx.ParticleSupervisor do
   end
 
   @doc """
-  Restart the supervisor, putting all particles in their initial states
+  Reinicia a instância de jogo associada, colocando todas as partículas
+  em seus estados iniciais.
   """
-  def restart, do: Supervisor.stop(__MODULE__)
+  def restart(game_id) do
+    # A lógica de reinicialização foi movida para o GameInstanceSupervisor (ou similar).
+    # Esta chamada está correta se CollisionEngine.restart/1 lida com o reinício
+    # da árvore de supervisão do jogo.
+    SnookerGameEx.CollisionEngine.restart(game_id)
+  end
 end

@@ -54,7 +54,7 @@ Hooks.CanvasHook = {
     this.setupDPadListeners();
 
     this.handleEvent("particle_moved", (payload) => {
-      // CORREÇÃO: Mantém o estado visual completo da partícula entre as atualizações do servidor.
+      // Mantém o estado visual completo da partícula entre as atualizações do servidor.
       const existingParticle = this.particles.get(payload.id);
       if (existingParticle) {
         payload.lastRollAngle = existingParticle.lastRollAngle;

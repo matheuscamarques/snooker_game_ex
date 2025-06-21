@@ -18,7 +18,8 @@ defmodule SnookerGameExWeb.Router do
     pipe_through :browser
 
     # get "/", PageController, :home
-    live "/", SnookerGameLive
+    # live "/", SnookerGameLive
+    live "/room/:game_id", SnookerGameLive, :show
   end
 
   # Other scopes may use custom stacks.

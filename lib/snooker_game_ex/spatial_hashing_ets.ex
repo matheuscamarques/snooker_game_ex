@@ -65,7 +65,7 @@ defmodule SnookerGameEx.SpatialHashETS do
   Converts world coordinates to grid cell coordinates.
   """
   @spec to_cell_coords({x :: float(), y :: float()}, cell_size :: pos_integer()) :: cell_key
-  defp to_cell_coords({x, y}, cell_size) do
+  def to_cell_coords({x, y}, cell_size) do
     {div(floor(x), cell_size), div(floor(y), cell_size)}
   end
 

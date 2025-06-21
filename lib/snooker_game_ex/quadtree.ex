@@ -1,52 +1,48 @@
 defmodule SnookerGameEx.Quadtree do
   @moduledoc """
-  A Quadtree implementation for 2D spatial partitioning.
+  Uma implementação de Quadtree para particionamento espacial 2D.
 
-  This data structure is used to efficiently query for objects within a specific
-  area, which is crucial for optimizing collision detection in the physics engine.
-  It works by recursively subdividing a 2D space into four quadrants.
+  Esta estrutura de dados é usada para consultar eficientemente objetos dentro de
+  uma área específica, o que é crucial para otimizar a detecção de colisões.
 
-  This version assumes it is managed by a single process (like the `CollisionEngine`
-  GenServer) to handle concurrency control externally. The functions are designed
-  to operate on an ETS table.
+  Esta versão foi refatorada para operar sobre uma referência de tabela ETS (`table_ref`)
+  fornecida externamente. O processo que chama este módulo é responsável por
+  criar (`:ets.new/2`) e destruir (`:ets.delete/1`) a tabela, garantindo o
+  isolamento de recursos e evitando conflitos de nome.
   """
 
-  @typedoc "The name of the ETS table used to store the Quadtree."
-  @type table_name :: atom()
-  @typedoc "A 2D point, represented as a tuple."
-  @type point :: {float(), float()}
-  @typedoc "A rectangular boundary."
+  @typedoc "A referência (TID) para a tabela ETS que armazena o Quadtree."
+  @type table_ref :: :ets.table()
+  @typedoc "Um ponto 2D, representado como uma lista de dois floats."
+  @type point :: [float()]
+  @typedoc "Um limite retangular."
   @type boundary :: %{x: float(), y: float(), w: float(), h: float()}
-  @typedoc "The unique identifier for an entity stored in the tree."
+  @typedoc "O identificador único para uma entidade armazenada na árvore."
   @type entity_id :: any()
-  @typedoc "The unique identifier for a node within the tree."
+  @typedoc "O identificador único para um nó dentro da árvore."
   @type node_id :: integer()
 
   # =============================================================================
   # Public API
   # =============================================================================
 
-  @doc "Creates and initializes the ETS table for the Quadtree."
-  @spec init(
-          table_name,
+  @doc """
+  Inicializa a estrutura do Quadtree dentro de uma tabela ETS existente.
+
+  Insere a configuração e o nó raiz na tabela fornecida.
+  A tabela deve ser criada pelo chamador com `:ets.new/2`.
+  """
+  @spec initialize(
+          table_ref,
           boundary,
           capacity :: non_neg_integer(),
           max_depth :: non_neg_integer()
         ) :: :ok
-  def init(table, boundary, capacity, max_depth) do
-    :ets.new(table, [
-      :set,
-      :public,
-      :named_table,
-      read_concurrency: true,
-      # Disabled to enforce single-process usage for writes
-      write_concurrency: false
-    ])
-
+  def initialize(table_ref, boundary, capacity, max_depth) do
     root_id = 1
     root_node = %{type: :leaf, boundary: boundary, points: []}
 
-    # Store the configuration for use in `clear/1`.
+    # Armazena a configuração para uso posterior, como em `clear/1`.
     config = %{
       root_id: root_id,
       capacity: capacity,
@@ -54,56 +50,50 @@ defmodule SnookerGameEx.Quadtree do
       boundary: boundary
     }
 
-    :ets.insert(table, {:__config__, config})
-    :ets.insert(table, {root_id, root_node})
-
+    :ets.insert(table_ref, {:__config__, config})
+    :ets.insert(table_ref, {root_id, root_node})
     :ok
   end
 
-  @doc "Clears all points from the Quadtree, resetting it to its initial state."
-  @spec clear(table_name) :: :ok
-  def clear(table) do
-    # This robust clear logic ensures the table is reset correctly.
-    case :ets.lookup(table, :__config__) do
+  @doc "Limpa todos os pontos do Quadtree, redefinindo-o para seu estado inicial."
+  @spec clear(table_ref) :: :ok
+  def clear(table_ref) do
+    case :ets.lookup(table_ref, :__config__) do
       [{:__config__, config}] ->
-        # Delete only the nodes (integer keys), preserving the :__config__ record.
+        # Apaga apenas os nós (chaves inteiras), preservando o registro de :__config__.
         match_spec = [{{:"$1", :_}, [{:is_integer, :"$1"}], [true]}]
-        :ets.match_delete(table, match_spec)
+        :ets.match_delete(table_ref, match_spec)
 
-        # Recreate the root node using the boundary stored in the config.
+        # Recria o nó raiz usando o limite armazenado na configuração.
         root_id = config.root_id
         root_node = %{type: :leaf, boundary: config.boundary, points: []}
-        :ets.insert(table, {root_id, root_node})
+        :ets.insert(table_ref, {root_id, root_node})
         :ok
 
       [] ->
-        # Table might already be cleared or uninitialized.
+        # A tabela pode já estar limpa ou não inicializada.
         :ok
     end
   end
 
-  @doc "Completely deletes the Quadtree's ETS table."
-  @spec delete_table(table_name) :: :ok
-  def delete_table(table), do: :ets.delete(table)
-
-  @doc "Inserts an entity with a point and an ID into the Quadtree."
-  @spec insert(table_name, point, entity_id) :: :ok | {:error, atom}
-  def insert(table, point, id) do
-    case :ets.lookup(table, :__config__) do
+  @doc "Insere uma entidade com um ponto e um ID no Quadtree."
+  @spec insert(table_ref, point, entity_id) :: :ok | {:error, atom}
+  def insert(table_ref, point, id) do
+    case :ets.lookup(table_ref, :__config__) do
       [{:__config__, config}] ->
-        do_insert(table, config.root_id, point, id, config, 0)
+        do_insert(table_ref, config.root_id, point, id, config, 0)
 
       [] ->
         {:error, :not_initialized}
     end
   end
 
-  @doc "Queries the Quadtree to find IDs of entities within a rectangular `range`."
-  @spec query(table_name, range :: boundary) :: list(entity_id)
-  def query(table, range) do
-    case :ets.lookup(table, :__config__) do
+  @doc "Consulta o Quadtree para encontrar IDs de entidades dentro de um `range` retangular."
+  @spec query(table_ref, range :: boundary) :: list(entity_id)
+  def query(table_ref, range) do
+    case :ets.lookup(table_ref, :__config__) do
       [{:__config__, config}] ->
-        do_query(table, config.root_id, range, [])
+        do_query(table_ref, config.root_id, range, [])
 
       [] ->
         []
@@ -111,118 +101,91 @@ defmodule SnookerGameEx.Quadtree do
   end
 
   # =============================================================================
-  # Internal Logic
-  # These functions are now public to allow for detailed documentation as requested,
-  # but they are designed for internal, recursive use.
+  # Lógica Interna
   # =============================================================================
 
-  @doc """
-  The internal recursive function for inserting a point.
+  @doc false
+  # MUDANÇA: Aceita uma referência de tabela (TID) em vez de um nome.
+  def do_insert(table_ref, node_id, point, entity_id, config, depth) do
+    [{^node_id, node}] = :ets.lookup(table_ref, node_id)
 
-  It traverses the tree to find the correct leaf node for the new point.
-  If the leaf is full, it triggers a subdivision.
-  """
-  @spec do_insert(table_name, node_id, point, entity_id, map, integer) :: :ok
-  def do_insert(table, node_id, point, entity_id, config, depth) do
-    # This lookup/insert operation is not atomic and is vulnerable to race conditions
-    # if not managed by a single process.
-    [{^node_id, node}] = :ets.lookup(table, node_id)
-
-    # Do not insert if the point is outside the node's boundary.
     unless contains?(node.boundary, point), do: :ok
 
     case node.type do
       :leaf ->
-        handle_leaf_insertion(table, node_id, node, point, entity_id, config, depth)
+        handle_leaf_insertion(table_ref, node_id, node, point, entity_id, config, depth)
 
       :internal ->
         quadrant = get_quadrant(node.boundary, point)
         child_id = node.children[quadrant]
-        do_insert(table, child_id, point, entity_id, config, depth + 1)
+        do_insert(table_ref, child_id, point, entity_id, config, depth + 1)
     end
   end
 
-  @doc """
-  Handles the logic for inserting a point into a leaf node.
-
-  If the leaf has space, it adds the point. If the leaf is full and the max depth
-  has not been reached, it subdivides the leaf and re-inserts all points.
-  """
-  @spec handle_leaf_insertion(table_name, node_id, map, point, entity_id, map, integer) :: :ok
-  def handle_leaf_insertion(table, node_id, node, point, entity_id, config, depth) do
+  @doc false
+  # MUDANÇA: Aceita uma referência de tabela (TID) em vez de um nome.
+  def handle_leaf_insertion(table_ref, node_id, node, point, entity_id, config, depth) do
     points = node.points
     capacity = config.capacity
     max_depth = config.max_depth
 
     if length(points) < capacity or depth >= max_depth do
-      # Add the new point to the leaf
       updated_node = %{node | points: [{point, entity_id} | points]}
-      :ets.insert(table, {node_id, updated_node})
+      :ets.insert(table_ref, {node_id, updated_node})
     else
-      # Subdivide the leaf and re-insert all points (including the new one)
-      subdivide(table, node_id, node)
+      subdivide(table_ref, node_id, node)
 
       for {p, eid} <- [{point, entity_id} | points] do
-        do_insert(table, node_id, p, eid, config, depth)
+        do_insert(table_ref, node_id, p, eid, config, depth)
       end
     end
 
     :ok
   end
 
-  @doc "Subdivides a leaf node into four new child leaves."
-  @spec subdivide(table_name, node_id, map) :: :ok
-  def subdivide(table, parent_id, parent_node) do
+  @doc false
+  # MUDANÇA: Aceita uma referência de tabela (TID) em vez de um nome.
+  def subdivide(table_ref, parent_id, parent_node) do
     %{boundary: pb} = parent_node
-
     cx = pb.x + pb.w / 2
     cy = pb.y + pb.h / 2
     hw = pb.w / 2
     hh = pb.h / 2
 
     children_boundaries = %{
-      # Northeast
       ne: %{x: cx, y: pb.y, w: hw, h: hh},
-      # Northwest
       nw: %{x: pb.x, y: pb.y, w: hw, h: hh},
-      # Southeast
       se: %{x: cx, y: cy, w: hw, h: hh},
-      # Southwest
       sw: %{x: pb.x, y: cy, w: hw, h: hh}
     }
 
-    # Create new ETS records for each child node
     children_ids =
       Enum.into(children_boundaries, %{}, fn {quadrant, boundary} ->
         child_id = :erlang.unique_integer([:positive])
         child_node = %{type: :leaf, boundary: boundary, points: []}
-        :ets.insert(table, {child_id, child_node})
+        :ets.insert(table_ref, {child_id, child_node})
         {quadrant, child_id}
       end)
 
-    # Convert the old leaf node into an internal node that points to its new children
     internal_node = %{type: :internal, boundary: pb, children: children_ids}
-    :ets.insert(table, {parent_id, internal_node})
+    :ets.insert(table_ref, {parent_id, internal_node})
     :ok
   end
 
-  @doc "The internal recursive function for querying a range."
-  @spec do_query(table_name, node_id, boundary, list) :: list(entity_id)
-  def do_query(table, node_id, range, found) do
-    [{^node_id, node}] = :ets.lookup(table, node_id)
+  @doc false
+  # MUDANÇA: Aceita uma referência de tabela (TID) em vez de um nome.
+  def do_query(table_ref, node_id, range, found) do
+    [{^node_id, node}] = :ets.lookup(table_ref, node_id)
 
-    # If the node's boundary does not intersect the query range, prune this branch.
     unless intersects?(node.boundary, range), do: found
 
     case node.type do
       :internal ->
-        # Recursively query all children.
         Enum.reduce(node.children, found, fn {_quadrant, child_id}, acc ->
-          do_query(table, child_id, range, acc)
+          do_query(table_ref, child_id, range, acc)
         end)
 
       :leaf ->
-        # Check all points in the leaf to see if they are within the range.
         Enum.reduce(node.points, found, fn {[px, py], id}, acc ->
           if px >= range.x and px < range.x + range.w and
                py >= range.y and py < range.y + range.h do
@@ -234,7 +197,7 @@ defmodule SnookerGameEx.Quadtree do
     end
   end
 
-  # --- Private Geometry Helper Functions ---
+  # --- Funções Auxiliares de Geometria (Privadas) ---
   defp contains?(boundary, [px, py]),
     do:
       px >= boundary.x and px < boundary.x + boundary.w and py >= boundary.y and
