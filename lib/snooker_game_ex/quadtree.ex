@@ -60,18 +60,21 @@ defmodule SnookerGameEx.Quadtree do
   def clear(table_ref) do
     case :ets.lookup(table_ref, :__config__) do
       [{:__config__, config}] ->
-        # Apaga apenas os nós (chaves inteiras), preservando o registro de :__config__.
-        match_spec = [{{:"$1", :_}, [{:is_integer, :"$1"}], [true]}]
-        :ets.match_delete(table_ref, match_spec)
+        # A forma mais robusta e simples de limpar a tabela é apagar tudo
+        # e depois reinserir a configuração e o nó raiz.
+        :ets.delete_all_objects(table_ref)
 
-        # Recria o nó raiz usando o limite armazenado na configuração.
+        # Reinserir a configuração que foi lida antes de apagar.
+        :ets.insert(table_ref, {:__config__, config})
+
+        # Recriar o nó raiz usando o limite armazenado na configuração.
         root_id = config.root_id
         root_node = %{type: :leaf, boundary: config.boundary, points: []}
         :ets.insert(table_ref, {root_id, root_node})
         :ok
 
       [] ->
-        # A tabela pode já estar limpa ou não inicializada.
+        # A tabela pode já estar limpa ou não inicializada, então não há nada a fazer.
         :ok
     end
   end
