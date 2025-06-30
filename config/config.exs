@@ -10,7 +10,7 @@ import Config
 config :snooker_game_ex,
   generators: [timestamp_type: :utc_datetime]
 
-#config :nx, default_backend: EXLA.Backend
+# config :nx, default_backend: EXLA.Backend
 
 # Configures the endpoint
 config :snooker_game_ex, SnookerGameExWeb.Endpoint,

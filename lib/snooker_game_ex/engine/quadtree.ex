@@ -1,4 +1,4 @@
-defmodule SnookerGameEx.Quadtree do
+defmodule SnookerGameEx.Engine.Quadtree do
   @moduledoc """
   Uma implementação de Quadtree para particionamento espacial 2D.
 

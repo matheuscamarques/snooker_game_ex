@@ -1,16 +1,16 @@
-defmodule SnookerGameEx.CollisionEngine do
+defmodule SnookerGameEx.Engine.CollisionEngine do
   @moduledoc """
-  O motor de colisão que orquestra a simulação de física do jogo.
-  Esta versão usa um solver iterativo síncrono em memória para garantir
-  uma resolução de colisão robusta e prevenir condições de corrida.
+  ADAPTER: O motor de simulação principal.
+  Implementa o behaviour `SnookerGameEx.Game` e orquestra a simulação.
+  É um GenServer que gerencia o loop do jogo e o estado das partículas.
   """
   use GenServer
   require Logger
 
-  alias SnookerGameEx.Quadtree
-  alias SnookerGameEx.Particle
-  alias SnookerGameEx.Physics
+  alias SnookerGameEx.Engine.{Particle, Quadtree}
+  alias SnookerGameEx.Core.Physics
 
+  # --- Constantes de Simulação ---
   @frame_interval_ms 16
   @dt @frame_interval_ms / 1000.0
   @resolution_iterations 10
@@ -19,6 +19,7 @@ defmodule SnookerGameEx.CollisionEngine do
   @canvas_height 500.0
   @particle_radius 15.0
   @particle_mass 1
+  @friction_coefficient 0.3
   @world_bounds %{
     x: @border_width,
     y: @border_width,
@@ -37,17 +38,21 @@ defmodule SnookerGameEx.CollisionEngine do
     %{pos: [@canvas_width / 2, @canvas_height - @border_width]}
   ]
 
-  # --- API Pública ---
+  # --- API Pública (para constantes) ---
   def pocket_radius, do: @pocket_radius
   def pockets, do: @pockets
-  def friction_coefficient, do: 0.3
+  def friction_coefficient, do: @friction_coefficient
   def particle_mass, do: @particle_mass
   def particle_radius, do: @particle_radius
   def world_bounds, do: @world_bounds
 
+  # --- Início do GenServer ---
   def start_link(opts) do
     game_id = Keyword.fetch!(opts, :game_id)
-    GenServer.start_link(__MODULE__, opts, name: via_tuple(game_id))
+    # Injeta a implementação do notificador. Permite mocks em testes.
+    notifier = Keyword.get(opts, :notifier, SnookerGameEx.Notifiers.PubSubNotifier)
+    state = [game_id: game_id, notifier: notifier] ++ opts
+    GenServer.start_link(__MODULE__, state, name: via_tuple(game_id))
   end
 
   def via_tuple(game_id),
@@ -58,28 +63,25 @@ defmodule SnookerGameEx.CollisionEngine do
   def init(opts) do
     game_id = Keyword.fetch!(opts, :game_id)
     ets_table = Keyword.fetch!(opts, :ets_table)
+    notifier = Keyword.fetch!(opts, :notifier)
     Logger.info("Starting Collision Engine for game #{game_id}")
 
-    # MUDANÇA: Criar as tabelas ETS diretamente aqui.
-    # O CollisionEngine agora é dono do ciclo de vida das tabelas.
-    # Usamos tabelas sem nome, operando por referência (TID).
     quadtree_a_tid = :ets.new(:quadtree_a_storage, [:set, :public, read_concurrency: true])
     quadtree_b_tid = :ets.new(:quadtree_b_storage, [:set, :public, read_concurrency: true])
 
     boundary = world_bounds()
-
-    # MUDANÇA: Chamar a nova função `initialize` do Quadtree, passando os TIDs.
     Quadtree.initialize(quadtree_a_tid, boundary, @quadtree_capacity, @quadtree_max_depth)
     Quadtree.initialize(quadtree_b_tid, boundary, @quadtree_capacity, @quadtree_max_depth)
+
     send(self(), :tick)
 
     {:ok,
      %{
        game_id: game_id,
        ets_table: ets_table,
+       notifier: notifier,
        last_time: System.monotonic_time(),
        accumulator: 0.0,
-       # MUDANÇA: Armazenar os TIDs (referências) em vez de nomes no estado.
        active_table: quadtree_a_tid,
        inactive_table: quadtree_b_tid
      }}
@@ -91,24 +93,22 @@ defmodule SnookerGameEx.CollisionEngine do
       "Terminating Collision Engine and cleaning up ETS tables for game #{state.game_id}"
     )
 
-    # MUDANÇA: Chamar :ets.delete diretamente, pois o CollisionEngine é o dono das tabelas.
     :ets.delete(state.active_table)
     :ets.delete(state.inactive_table)
     :ok
   end
 
-  # ... (o restante do módulo permanece exatamente o mesmo) ...
+  @impl true
+  def handle_cast({:apply_force, particle_id, force}, state) do
+    # Delega o comando para o processo Particle correspondente
+    Particle.apply_force(state.game_id, particle_id, force)
+    {:noreply, state}
+  end
 
-  @doc """
-  Reinicia este supervisor.
-  """
-  def restart(game_id) do
-    case Registry.lookup(SnookerGameEx.GameRegistry, game_id) do
-      [{pid, _}] -> Supervisor.terminate_child(SnookerGameEx.GameSupervisor, pid)
-      [] -> :ok
-    end
-
-    SnookerGameEx.GameSupervisor.start_game(game_id)
+  @impl true
+  def handle_cast({:hold_ball, particle_id}, state) do
+    Particle.hold(state.game_id, particle_id)
+    {:noreply, state}
   end
 
   @impl true
@@ -116,12 +116,13 @@ defmodule SnookerGameEx.CollisionEngine do
     current_time = System.monotonic_time()
 
     delta_time_ms =
-      (current_time - state.last_time)
-      |> System.convert_time_unit(:native, :millisecond)
+      System.convert_time_unit(current_time - state.last_time, :native, :millisecond)
 
     capped_delta = min(delta_time_ms / 1000.0, 0.05)
     accumulator = state.accumulator + capped_delta
+
     new_accumulator = update_simulation_loop(accumulator, state)
+
     Process.send_after(self(), :tick, @frame_interval_ms)
 
     {:noreply,
@@ -139,8 +140,12 @@ defmodule SnookerGameEx.CollisionEngine do
     simulate_steps(accumulator, max_steps_per_tick, state)
   end
 
-  defp simulate_steps(acc, remaining_steps, state) when acc >= @dt and remaining_steps > 0 do
+  defp simulate_steps(acc, 0, _state), do: acc
+
+  defp simulate_steps(acc, remaining_steps, state) when acc >= @dt do
+    # 1. Mover partículas (delegação para cada processo Particle)
     broadcast_move_command(state.game_id, state.ets_table)
+    # 2. Detectar e resolver colisões
     detect_and_resolve_collisions(state)
     simulate_steps(acc - @dt, remaining_steps - 1, state)
   end
@@ -150,9 +155,9 @@ defmodule SnookerGameEx.CollisionEngine do
   defp broadcast_move_command(game_id, ets_table) do
     ets_table
     |> :ets.tab2list()
-    |> Task.async_stream(fn particle_data ->
-      particle_id = elem(particle_data, 0)
-      GenServer.call(Particle.via_tuple(game_id, particle_id), {:move, @dt}, 5000)
+    |> Task.async_stream(fn {particle_id, _particle_data} ->
+      # Cada partícula calcula seu próprio movimento
+      Particle.move(game_id, particle_id, @dt)
     end)
     |> Stream.run()
   end
@@ -174,9 +179,7 @@ defmodule SnookerGameEx.CollisionEngine do
     end
   end
 
-  defp iterative_resolution_loop(_table, current_states, 0) do
-    current_states
-  end
+  defp iterative_resolution_loop(_table, current_states, 0), do: current_states
 
   defp iterative_resolution_loop(table, current_states, iterations_left) do
     build_spatial_structure(table, current_states)
@@ -222,10 +225,8 @@ defmodule SnookerGameEx.CollisionEngine do
         new_pos = Enum.at(final_pos_list, index)
         new_vel = Enum.at(final_vel_list, index)
 
-        GenServer.cast(
-          Particle.via_tuple(game_id, particle_id),
-          {:update_after_collision, new_vel, new_pos}
-        )
+        # Envia a atualização para o processo Particle específico
+        Particle.update_after_collision(game_id, particle_id, new_vel, new_pos)
       end
     end
   end
@@ -257,18 +258,20 @@ defmodule SnookerGameEx.CollisionEngine do
   end
 
   defp batch_particles(all_particles) do
+    # Converte a lista de tuplas do ETS para a struct de tensores
     ids = Enum.map(all_particles, &elem(&1, 0))
-    pos_idx = Particle.get_attr_index(:pos)
-    vel_idx = Particle.get_attr_index(:vel)
-    radius_idx = Particle.get_attr_index(:radius)
-    mass_idx = Particle.get_attr_index(:mass)
+
+    # Extrai dados da tupla. Isto é um pouco frágil; usar structs seria melhor.
+    pos_list = Enum.map(all_particles, &elem(&1, 1).pos)
+    vel_list = Enum.map(all_particles, &elem(&1, 1).vel)
+    radius_list = Enum.map(all_particles, &elem(&1, 1).radius)
+    mass_list = Enum.map(all_particles, &elem(&1, 1).mass)
 
     states = %{
-      pos: Enum.map(all_particles, &elem(&1, pos_idx)) |> Nx.tensor(),
-      vel: Enum.map(all_particles, &elem(&1, vel_idx)) |> Nx.tensor(),
-      radius:
-        Enum.map(all_particles, &elem(&1, radius_idx)) |> Nx.tensor() |> Nx.reshape({:auto, 1}),
-      mass: Enum.map(all_particles, &elem(&1, mass_idx)) |> Nx.tensor() |> Nx.reshape({:auto, 1})
+      pos: Nx.tensor(pos_list),
+      vel: Nx.tensor(vel_list),
+      radius: Nx.tensor(radius_list) |> Nx.reshape({:auto, 1}),
+      mass: Nx.tensor(mass_list) |> Nx.reshape({:auto, 1})
     }
 
     {ids, states}

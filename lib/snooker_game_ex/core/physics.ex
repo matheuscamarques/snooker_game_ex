@@ -1,10 +1,11 @@
-defmodule SnookerGameEx.Physics do
+defmodule SnookerGameEx.Core.Physics do
   @moduledoc """
-  Physics computations optimized with Nx.
-  This version uses manual list manipulation for updates to ensure
-  maximum compatibility with all versions of Nx.
+  Contém todas as computações de física puras, otimizadas com Nx.
+  Este módulo opera exclusivamente nas structs do Core.GameState.
   """
   import Nx.Defn
+
+  alias SnookerGameEx.Core.GameState
 
   @typedoc "Batch state: tensors for particle properties"
   @type batch_states :: %{
@@ -17,9 +18,38 @@ defmodule SnookerGameEx.Physics do
   @typedoc "World boundaries definition"
   @type world_bounds :: %{x: float(), y: float(), w: float(), h: float()}
 
+  @doc "Calcula a magnitude (comprimento) de um vetor de velocidade."
   def velocity_magnitude([vx, vy]), do: :math.sqrt(vx * vx + vy * vy)
 
-  def handle_wall_collision(particle, world_bounds) do
+  @doc "Aplica atrito a uma partícula e a move com base no delta time."
+  def apply_friction_and_move(%GameState{} = p, dt, friction_coefficient) do
+    if velocity_magnitude(p.vel) < 0.01 do
+      %{p | vel: [0.0, 0.0]}
+    else
+      [vx, vy] = p.vel
+      damping_factor = :math.pow(1.0 - friction_coefficient, dt)
+      damped_vel = [vx * damping_factor, vy * damping_factor]
+
+      distance_moved = velocity_magnitude(damped_vel) * dt
+      new_roll_distance = p.roll_distance + distance_moved
+      new_spin_angle = p.spin_angle + distance_moved / p.radius * 0.01
+
+      [px, py] = p.pos
+      [dvx, dvy] = damped_vel
+      new_pos_integrated = [px + dvx * dt, py + dvy * dt]
+
+      %{
+        p
+        | pos: new_pos_integrated,
+          vel: damped_vel,
+          roll_distance: new_roll_distance,
+          spin_angle: new_spin_angle
+      }
+    end
+  end
+
+  @doc "Lida com a colisão de uma partícula com as paredes do mundo."
+  def handle_wall_collision(%GameState{} = particle, world_bounds) do
     %{pos: [x, y], vel: [vx, vy], radius: r} = particle
     %{x: min_x, y: min_y, w: width, h: height} = world_bounds
     max_x = min_x + width
@@ -40,8 +70,19 @@ defmodule SnookerGameEx.Physics do
         true -> {vy, y}
       end
 
-    {[new_x, new_y], [new_vx, new_vy]}
+    %{particle | pos: [new_x, new_y], vel: [new_vx, new_vy]}
   end
+
+  @doc "Verifica se uma partícula foi encaçapada."
+  def pocketed?(%GameState{pos: [px, py]}, pockets, pocket_radius) do
+    Enum.any?(pockets, fn pocket ->
+      [pocket_x, pocket_y] = pocket.pos
+      dist_sq = :math.pow(px - pocket_x, 2) + :math.pow(py - pocket_y, 2)
+      dist_sq < :math.pow(pocket_radius, 2)
+    end)
+  end
+
+  # --- Funções com Nx ---
 
   defn get_colliding_pairs(states, candidate_pairs) do
     i = Nx.slice_along_axis(candidate_pairs, 0, 1, axis: 1) |> Nx.squeeze(axes: [1])
@@ -110,12 +151,7 @@ defmodule SnookerGameEx.Physics do
     {i, j, new_vel_i, new_vel_j, new_pos_i, new_pos_j}
   end
 
-  @doc """
-  Applies collision updates by manually reconstructing the tensors.
-  This approach is guaranteed to be compatible with all versions of Nx.
-  """
   def apply_collision_updates(states, collision_results) do
-    # 1. Extrair os dados de atualização e convertê-los para listas Elixir.
     {i_tensor, j_tensor, new_vel_i, new_vel_j, new_pos_i, new_pos_j} = collision_results
     i_list = Nx.to_list(i_tensor)
     j_list = Nx.to_list(j_tensor)
@@ -124,7 +160,6 @@ defmodule SnookerGameEx.Physics do
     pos_i_list = Nx.to_list(new_pos_i)
     pos_j_list = Nx.to_list(new_pos_j)
 
-    # 2. Criar um mapa para acesso rápido às atualizações.
     updates =
       ((i_list
         |> Enum.zip(pos_i_list)
@@ -136,40 +171,24 @@ defmodule SnookerGameEx.Physics do
           |> Enum.map(fn {{index, pos}, vel} -> {index, {pos, vel}} end)))
       |> Map.new()
 
-    # 3. Converter os tensores originais para listas Elixir.
     original_pos_list = Nx.to_list(states.pos)
     original_vel_list = Nx.to_list(states.vel)
 
-    # 4. Construir as novas listas, aplicando as atualizações.
     {final_pos_list, final_vel_list} =
       Enum.with_index(original_pos_list)
       |> Enum.map(fn {original_pos, index} ->
         original_vel = Enum.at(original_vel_list, index)
 
         case Map.get(updates, index) do
-          # Se houver uma atualização para este índice, use-a.
           {new_pos, new_vel} -> {new_pos, new_vel}
-          # Caso contrário, mantenha os valores originais.
           nil -> {original_pos, original_vel}
         end
       end)
       |> Enum.unzip()
 
-    # 5. Converter as listas finais de volta para tensores.
     final_pos_tensor = Nx.tensor(final_pos_list)
     final_vel_tensor = Nx.tensor(final_vel_list)
 
-    # 6. Retornar o novo mapa de estados.
     %{states | pos: final_pos_tensor, vel: final_vel_tensor}
-  end
-
-  def pocketed?(particle_pos, pockets, pocket_radius) do
-    [px, py] = particle_pos
-
-    Enum.any?(pockets, fn pocket ->
-      [pocket_x, pocket_y] = pocket.pos
-      dist_sq = :math.pow(px - pocket_x, 2) + :math.pow(py - pocket_y, 2)
-      dist_sq < :math.pow(pocket_radius, 2)
-    end)
   end
 end
