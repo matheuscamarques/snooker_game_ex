@@ -1,15 +1,18 @@
-/**
- * @file renderer.js
- * @description Contém todas as funções para desenhar no canvas.
- */
+// ============================================================================
+// FILE: /assets/js/renderer.js
+// DESCRIÇÃO: Contém todas as funções para desenhar no canvas.
+// ============================================================================
 
-// Função principal de desenho, chamada a cada frame
+/**
+ * Função principal de desenho, chamada a cada frame pela `requestAnimationFrame`.
+ * @param {object} hook - A instância do LiveView Hook.
+ */
 export function drawFrame(hook) {
     const now = performance.now();
-    const deltaTime = (now - hook.lastFrameTime) / 1000;
+    const deltaTime = (now - (hook.lastFrameTime || now)) / 1000;
     hook.lastFrameTime = now;
 
-    // Atualiza a câmera com base nos inputs
+    // Atualiza a câmera com base nos inputs de pan
     hook.cameraModule.updatePan(hook.camera, hook.camera.panState, deltaTime);
     hook.cameraModule.updatePan(hook.camera, hook.camera.keyboardPanState, deltaTime);
 
@@ -19,13 +22,15 @@ export function drawFrame(hook) {
 
     ctx.clearRect(0, 0, width, height);
     ctx.save();
+    
+    // Aplica transformações da câmera
     ctx.translate(width / 2, height / 2);
     ctx.rotate(rotation);
     ctx.scale(zoom, zoom);
     ctx.translate(-pan.x, -pan.y);
 
-    drawTable(ctx, 1000, 500); // Desenha a mesa
-    particles.forEach((particle) => drawBall(hook, particle)); // Desenha as bolas
+    drawTable(ctx, 1000, 500);
+    particles.forEach((particle) => drawBall(hook, particle));
 
     // Lógica de desenho do taco e da barra de força
     if (cueState.status === 'aiming') {
@@ -42,18 +47,20 @@ export function drawFrame(hook) {
     hook.animationFrameId = requestAnimationFrame(() => drawFrame(hook));
 }
 
-// --- Funções de Desenho Auxiliares ---
-
 function drawTable(ctx, worldWidth, worldHeight) {
-    ctx.fillStyle = "#1a6d38";
+    // Desenha a base da mesa
+    ctx.fillStyle = "#1a6d38"; // Verde
     ctx.fillRect(0, 0, worldWidth, worldHeight);
-    ctx.fillStyle = "#8B4513";
+
+    // Desenha as bordas
+    ctx.fillStyle = "#8B4513"; // Madeira
     const borderWidth = 30;
-    ctx.fillRect(0, 0, worldWidth, borderWidth);
-    ctx.fillRect(0, worldHeight - borderWidth, worldWidth, borderWidth);
-    ctx.fillRect(0, 0, borderWidth, worldHeight);
-    ctx.fillRect(worldWidth - borderWidth, 0, borderWidth, worldHeight);
+    ctx.fillRect(-borderWidth, -borderWidth, worldWidth + borderWidth * 2, borderWidth);
+    ctx.fillRect(-borderWidth, worldHeight, worldWidth + borderWidth * 2, borderWidth);
+    ctx.fillRect(-borderWidth, 0, borderWidth, worldHeight);
+    ctx.fillRect(worldWidth, 0, borderWidth, worldHeight);
     
+    // Desenha as caçapas
     ctx.fillStyle = "black";
     const pocketRadius = 25;
     const pockets = [
@@ -76,6 +83,7 @@ function drawBall(hook, particle) {
     const speed = Math.sqrt(vx * vx + vy * vy);
     let rollAngle, textureOffsetY;
 
+    // Calcula o ângulo de rotação com base na velocidade
     if (speed > 0.1) {
         rollAngle = Math.atan2(vy, vx) - Math.PI / 2;
         textureOffsetY = roll_distance % (Math.PI * 2 * radius);
@@ -91,11 +99,13 @@ function drawBall(hook, particle) {
     ctx.rotate(rollAngle);
     ctx.rotate(spin_angle);
 
+    // Desenha a base da bola
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.fillStyle = base_color;
     ctx.fill();
 
+    // Desenha a textura (faixa e número)
     ctx.save();
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
@@ -128,9 +138,10 @@ function drawBall(hook, particle) {
             ctx.fillText(number.toString(), 0, textureOffsetY + i * circumference);
         }
     }
-    ctx.restore();
-    ctx.restore();
+    ctx.restore(); // Restaura do clip
+    ctx.restore(); // Restaura da translação/rotação da bola
 
+    // Desenha o efeito de brilho e sombra
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     const gradient = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
@@ -140,6 +151,7 @@ function drawBall(hook, particle) {
     ctx.fillStyle = gradient;
     ctx.fill();
 
+    // Desenha uma borda fina
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
@@ -164,6 +176,7 @@ function drawCue(hook, pullback) {
     const forceNormX = forceDirX / dirLen;
     const forceNormY = forceDirY / dirLen;
 
+    // Desenha a linha de mira
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
@@ -174,12 +187,11 @@ function drawCue(hook, pullback) {
     ctx.stroke();
     ctx.restore();
 
+    // Desenha o taco
     const tipX = start.x - forceNormX * (whiteBall.radius + PULLBACK_OFFSET + pullback);
     const tipY = start.y - forceNormY * (whiteBall.radius + PULLBACK_OFFSET + pullback);
-    
     const buttX = tipX - forceNormX * CUE_LENGTH;
     const buttY = tipY - forceNormY * CUE_LENGTH;
-    
     const perpX = -forceNormY;
     const perpY = forceNormX;
     
@@ -201,7 +213,7 @@ function animateAndStrike(hook) {
     const { animation } = hook.cueState;
     const elapsedTime = performance.now() - animation.startTime;
     const progress = Math.min(elapsedTime / animation.duration, 1);
-    const easedProgress = 1 - Math.pow(1 - progress, 3);
+    const easedProgress = 1 - Math.pow(1 - progress, 3); // Ease-out-cubic
     const currentPullDistance = animation.initialPullDistance * (1 - easedProgress);
     
     drawCue(hook, currentPullDistance);
@@ -214,5 +226,6 @@ function animateAndStrike(hook) {
 
 function updatePowerBar(hook, pullDistance) {
     const power = Math.min(pullDistance / hook.cueState.MAX_PULL_DISTANCE, 1);
-    hook.powerBarElement.style.width = `${power * 100}%`;
+    // A barra de força não está no HTML, mas se estivesse, seria assim:
+    // hook.powerBarElement.style.width = `${power * 100}%`;
 }

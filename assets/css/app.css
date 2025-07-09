@@ -2,21 +2,56 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
-/* This file is for your main application CSS */
-body {
-  background-color: #282c34;
-  color: white;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-  font-family: sans-serif;
+/*
+  ============================================================================
+  FILE: /assets/css/app.css
+  DESCRIÇÃO: Folha de estilos principal para a aplicação do jogo de sinuca.
+  ============================================================================
+*/
+
+/* --- Variáveis Globais (Custom Properties) para Theming --- */
+:root {
+  --bg-color-darkest: #21252b;
+  --bg-color-dark: #282c34;
+  --text-color: #e0e0e0;
+  --primary-color: #4CAF50;
+  --primary-color-hover: #45a049;
+  --border-color: rgba(255, 255, 255, 0.3);
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --interactive-bg: rgba(0, 0, 0, 0.4);
+  --interactive-bg-hover: rgba(0, 0, 0, 0.6);
+  --border-radius-sm: 5px;
+  --border-radius-md: 8px;
+  --spacing-sm: 0.5rem;   /* 8px */
+  --spacing-md: 1rem;     /* 16px */
+  --spacing-lg: 1.25rem;  /* 20px */
 }
 
+/* --- Estilos Base --- */
+body {
+  background-color: var(--bg-color-dark);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  
+  /* Técnica moderna para centrar conteúdo na tela */
+  display: grid;
+  place-content: center;
+  min-height: 100vh;
+  margin: 0;
+  padding: var(--spacing-lg);
+  box-sizing: border-box;
+}
+
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
+/* --- Componentes Principais --- */
 .game-container {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: var(--spacing-lg);
   width: 100%;
 }
 
@@ -26,18 +61,25 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 20px;
-  background: #21252b;
-  color: white;
-  border-radius: 8px;
-  margin-bottom: 20px;
+  flex-wrap: wrap; /* Permite quebrar linha em telas pequenas */
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--bg-color-darkest);
+  border-radius: var(--border-radius-md);
 }
 
 .game-info {
   display: flex;
-  gap: 20px;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
 }
 
+.winner-message {
+  font-weight: bold;
+  color: var(--primary-color);
+}
+
+/* --- Wrapper do Canvas e Responsividade --- */
 #simulation-wrapper {
   position: relative;
   width: 1000px;
@@ -46,109 +88,129 @@ body {
 
 #canvas-wrapper {
   width: 100%;
-  padding-top: 50%; /* Proporção 2:1 (1000x500) */
+  padding-top: 50%; /* Proporção 2:1 (altura é 50% da largura) */
   position: relative;
-  transition: all 0.3s ease-in-out;
-  border-radius: 10px;
-  overflow: hidden; /* Garante que o canvas não "vaze" durante a animação */
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
 }
 
 #physics-canvas {
-  border: 2px solid #555;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-  cursor: grab;
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  border: 2px solid var(--border-color);
+  box-shadow: 0 4px 8px var(--shadow-color);
 }
 
-#canvas-wrapper.rotated {
-  padding-top: 200%; /* Inverte a proporção para 1:2 */
+/* --- Estilos de Botões (Base e Variantes) --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, transform 0.1s ease;
 }
 
+.btn:active {
+    transform: scale(0.95);
+}
+
+/* Melhora a acessibilidade para navegação com teclado */
+.btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--bg-color-dark);
+}
+
+.game-controls .btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 1rem;
+  font-weight: bold;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+}
+
+.game-controls .btn:hover {
+  background-color: var(--primary-color-hover);
+}
+
+/* --- Controlos Sobrepostos ao Canvas --- */
 .camera-controls {
   position: absolute;
-  top: 15px;
-  right: 15px;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
   z-index: 10;
 }
 
-.camera-controls button {
+.camera-controls .btn {
   width: 45px;
   height: 45px;
-  font-size: 22px;
-  font-weight: bold;
-  background: rgba(0, 0, 0, 0.4);
+  font-size: 1.5rem;
+  background: var(--interactive-bg);
   color: white;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s;
+  border-color: var(--border-color);
+  border-radius: var(--border-radius-md);
 }
 
-.camera-controls button:hover {
-    background: rgba(0, 0, 0, 0.6);
+.camera-controls .btn:hover {
+  background-color: var(--interactive-bg-hover);
 }
 
 #d-pad-controls {
   position: absolute;
-  bottom: 15px;
-  left: 15px;
+  bottom: var(--spacing-md);
+  left: var(--spacing-md);
   width: 150px;
   height: 150px;
   display: grid;
+  grid-template-areas:
+    ". up ."
+    "left . right"
+    ". down .";
   grid-template-columns: 1fr 1fr 1fr;
   grid-template-rows: 1fr 1fr 1fr;
-  gap: 5px;
+  gap: var(--spacing-sm);
   z-index: 10;
 }
 
-#d-pad-controls button {
-  background: rgba(0, 0, 0, 0.4);
+#d-pad-controls .btn {
+  background: var(--interactive-bg);
   color: white;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 10px;
-  font-size: 24px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: background-color 0.2s;
+  border-color: var(--border-color);
+  border-radius: var(--border-radius-md);
+  font-size: 1.75rem;
 }
 
-#d-pad-controls button:active {
-  background: rgba(0, 0, 0, 0.7);
+#d-pad-controls .btn:active {
+  background: var(--interactive-bg-hover);
+  transform: scale(0.95);
 }
 
-#d-pad-up { grid-area: 1 / 2 / 2 / 3; }
-#d-pad-left { grid-area: 2 / 1 / 3 / 2; }
-#d-pad-right { grid-area: 2 / 3 / 3 / 4; }
-#d-pad-down { grid-area: 3 / 2 / 4 / 3; }
+/* Mapeamento para as áreas do grid */
+#d-pad-up { grid-area: up; }
+#d-pad-left { grid-area: left; }
+#d-pad-right { grid-area: right; }
+#d-pad-down { grid-area: down; }
 
-.game-controls {
-  margin-top: 20px;
+/* --- Cursores de Interação --- */
+[data-can-shoot="true"] #physics-canvas {
+  cursor: crosshair;
 }
 
-.game-controls button {
-  padding: 10px 20px;
-  font-size: 16px;
-  background: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background-color 0.2s;
+[data-can-shoot="false"] #physics-canvas {
+  cursor: not-allowed;
 }
 
-.game-controls button:hover {
-  background: #45a049;
+#physics-canvas:active {
+    cursor: grabbing;
 }

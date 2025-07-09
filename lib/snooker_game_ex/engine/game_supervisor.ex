@@ -2,7 +2,6 @@ defmodule SnookerGameEx.Engine.GameSupervisor do
   @moduledoc "ADAPTER: Supervisor dinâmico para todas as instâncias de jogo."
   use DynamicSupervisor
 
-  # Este módulo agora implementa o Port `Game` para o mundo exterior.
   @behaviour SnookerGameEx.Game
 
   alias SnookerGameEx.Engine.GameInstanceSupervisor
@@ -31,8 +30,15 @@ defmodule SnookerGameEx.Engine.GameSupervisor do
   end
 
   @impl SnookerGameEx.Game
+  def start_shot(game_id) do
+    case Registry.lookup(SnookerGameEx.GameRegistry, {SnookerGameEx.Engine.GameLogic, game_id}) do
+      [{pid, _}] -> GenServer.cast(pid, :start_shot)
+      [] -> {:error, :game_not_found}
+    end
+  end
+
+  @impl SnookerGameEx.Game
   def apply_force(game_id, particle_id, force) do
-    # Encontra o CollisionEngine para o jogo e envia o comando.
     case Registry.lookup(
            SnookerGameEx.GameRegistry,
            {SnookerGameEx.Engine.CollisionEngine, game_id}
@@ -42,13 +48,11 @@ defmodule SnookerGameEx.Engine.GameSupervisor do
     end
   end
 
+  # NOVO: Implementação da função do port.
   @impl SnookerGameEx.Game
-  def hold_ball(game_id, particle_id) do
-    case Registry.lookup(
-           SnookerGameEx.GameRegistry,
-           {SnookerGameEx.Engine.CollisionEngine, game_id}
-         ) do
-      [{pid, _}] -> GenServer.cast(pid, {:hold_ball, particle_id})
+  def reposition_cue_ball(game_id, {x, y}) do
+    case Registry.lookup(SnookerGameEx.GameRegistry, {SnookerGameEx.Engine.GameLogic, game_id}) do
+      [{pid, _}] -> GenServer.cast(pid, {:reposition_cue_ball, [x, y]})
       [] -> {:error, :game_not_found}
     end
   end

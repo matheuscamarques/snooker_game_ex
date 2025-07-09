@@ -2,7 +2,6 @@ defmodule SnookerGameEx.Application do
   @moduledoc false
   use Application
 
-  # CORREÇÃO: Aponta para o GameSupervisor no namespace correto.
   alias SnookerGameEx.Engine.GameSupervisor
 
   @impl true

@@ -1,12 +1,10 @@
 /**
- * @file state.js
- * @description Define os estados iniciais para os componentes do canvas.
+ * Cria o estado inicial para a câmera.
+ * @returns {object} O objeto de estado da câmera.
  */
-
-// Estado inicial para a câmera
 export function createInitialCameraState() {
   return {
-    pan: { x: 0, y: 0 },
+    pan: { x: 1000 / 2, y: 500 / 2 }, // Centraliza na mesa
     zoom: 1.0,
     rotation: 0,
     isPanning: false,
@@ -19,7 +17,10 @@ export function createInitialCameraState() {
   };
 }
 
-// Estado inicial para o taco de sinuca
+/**
+ * Cria o estado inicial para o taco de sinuca.
+ * @returns {object} O objeto de estado do taco.
+ */
 export function createInitialCueState() {
   return {
     status: 'inactive', // 'inactive', 'aiming', 'striking'
@@ -28,7 +29,7 @@ export function createInitialCueState() {
     MAX_PULL_DISTANCE: 200,
     animation: {
       startTime: 0,
-      duration: 150,
+      duration: 150, // Duração da animação da tacada em ms
       force: { x: 0, y: 0 },
       initialPullDistance: 0,
     }

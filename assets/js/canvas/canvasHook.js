@@ -1,8 +1,7 @@
-import { createInitialCameraState, createInitialCueState } from './state';
-import * as cameraModule from './camera';
-import * as cueModule from './cue';
-import { drawFrame } from './renderer';
-import InputHandler from './inputHandler';
+// ============================================================================
+// FILE: /assets/js/canvas_hook.js
+// DESCRIÇÃO: O hook do Phoenix LiveView que inicializa e gere o canvas.
+// ============================================================================
 
 export const CanvasHook = {
   mounted() {
@@ -10,29 +9,24 @@ export const CanvasHook = {
     this.camera = createInitialCameraState();
     this.cueState = createInitialCueState();
     this.animationFrameId = null;
-    this.cameraModule = cameraModule;
-    this.cueModule = cueModule;
+
+    // Importa os módulos para dentro do hook
+    this.cameraModule = { screenToWorld, resetView, rotateCamera, zoom, updatePan };
+    this.cueModule = { startAiming, updateAim, applyStrike };
 
     this.canvas = this.el.querySelector("#physics-canvas");
     this.ctx = this.canvas.getContext("2d");
     this.canvasWrapper = this.el.querySelector('#canvas-wrapper');
-    this.powerBarElement = this.el.querySelector('#power-bar');
 
     this.inputHandler = new InputHandler(this);
     this.inputHandler.addEventListeners();
 
-    this.handleEvent("initial_state", ({ particles }) => {
-      console.log("Received initial state with", particles.length, "particles.");
-      this.particles.clear();
-      particles.forEach(p => this.updateParticle(p));
-      // Inicia o loop de renderização APÓS receber o estado inicial
-      this.startGame();
-    });
+    // Inicia o loop de renderização e redimensiona o canvas pela primeira vez
+    this.startGame();
+
+    // Listeners para eventos do servidor
     this.handleEvent("particle_moved", (payload) => this.updateParticle(payload));
     this.handleEvent("particle_removed", (payload) => this.particles.delete(payload.id));
-    
-    // Solicita o estado inicial assim que o hook é montado
-    this.pushEvent("request_initial_state", {});
   },
 
   startGame() {
@@ -52,9 +46,10 @@ export const CanvasHook = {
 
   updateParticle(payload) {
     const existingParticle = this.particles.get(payload.id);
+    // Mantém o estado de rotação da bola para uma aparência suave quando para
     if (existingParticle) {
       payload.lastRollAngle = existingParticle.lastRollAngle;
-      payload.lastTextureOffsetY = existingParticle.lastTextureOffsetY;
+      payload.lastTextureOffsetY = existing.lastTextureOffsetY;
     }
     this.particles.set(payload.id, payload);
   },

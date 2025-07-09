@@ -91,6 +91,9 @@ defmodule SnookerGameEx.Engine.ParticleSupervisor do
     Supervisor.init(children, strategy: :one_for_one)
   end
 
+  # --- CORREÇÃO PRINCIPAL AQUI ---
+  # A estratégia de reinício é removida. O padrão `:transient` será usado para todas as bolas.
+  # Isso é o comportamento correto, pois um processo terminado normalmente não deve ser reiniciado.
   defp particle_spec(game_id, ets_table, notifier, id, ball_data, pos) do
     %{
       id: {game_id, id},
@@ -111,6 +114,7 @@ defmodule SnookerGameEx.Engine.ParticleSupervisor do
           ]
         ]
       },
+      # Todas as bolas são transientes.
       restart: :transient,
       type: :worker
     }

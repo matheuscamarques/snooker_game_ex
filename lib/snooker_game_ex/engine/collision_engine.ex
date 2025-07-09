@@ -49,7 +49,6 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
   # --- Início do GenServer ---
   def start_link(opts) do
     game_id = Keyword.fetch!(opts, :game_id)
-    # Injeta a implementação do notificador. Permite mocks em testes.
     notifier = Keyword.get(opts, :notifier, SnookerGameEx.Notifiers.PubSubNotifier)
     state = [game_id: game_id, notifier: notifier] ++ opts
     GenServer.start_link(__MODULE__, state, name: via_tuple(game_id))
@@ -64,10 +63,10 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
     game_id = Keyword.fetch!(opts, :game_id)
     ets_table = Keyword.fetch!(opts, :ets_table)
     notifier = Keyword.fetch!(opts, :notifier)
-    Logger.info("Starting Collision Engine for game #{game_id}")
+    Logger.info("[Game #{game_id}] Starting Collision Engine")
 
-    quadtree_a_tid = :ets.new(:quadtree_a_storage, [:set, :public, read_concurrency: true])
-    quadtree_b_tid = :ets.new(:quadtree_b_storage, [:set, :public, read_concurrency: true])
+    quadtree_a_tid = :ets.new(:"#{game_id}_quad_a", [:set, :public, read_concurrency: true])
+    quadtree_b_tid = :ets.new(:"#{game_id}_quad_b", [:set, :public, read_concurrency: true])
 
     boundary = world_bounds()
     Quadtree.initialize(quadtree_a_tid, boundary, @quadtree_capacity, @quadtree_max_depth)
@@ -83,14 +82,15 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
        last_time: System.monotonic_time(),
        accumulator: 0.0,
        active_table: quadtree_a_tid,
-       inactive_table: quadtree_b_tid
+       inactive_table: quadtree_b_tid,
+       balls_are_moving: false
      }}
   end
 
   @impl true
-  def terminate(_reason, state) do
+  def terminate(reason, state) do
     Logger.info(
-      "Terminating Collision Engine and cleaning up ETS tables for game #{state.game_id}"
+      "[Game #{state.game_id}] Terminating Collision Engine. Reason: #{inspect(reason)}"
     )
 
     :ets.delete(state.active_table)
@@ -100,9 +100,9 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
 
   @impl true
   def handle_cast({:apply_force, particle_id, force}, state) do
-    # Delega o comando para o processo Particle correspondente
+    Logger.debug("[Game #{state.game_id}] Applying force to particle #{particle_id}")
     Particle.apply_force(state.game_id, particle_id, force)
-    {:noreply, state}
+    {:noreply, %{state | balls_are_moving: true}}
   end
 
   @impl true
@@ -123,6 +123,14 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
 
     new_accumulator = update_simulation_loop(accumulator, state)
 
+    previously_moving = state.balls_are_moving
+    currently_moving = are_any_balls_moving?(state.ets_table, state.game_id)
+
+    if previously_moving and not currently_moving do
+      Logger.info("[Game #{state.game_id}] All balls stopped. Notifying GameLogic.")
+      state.notifier.notify_all_balls_stopped(state.game_id)
+    end
+
     Process.send_after(self(), :tick, @frame_interval_ms)
 
     {:noreply,
@@ -131,8 +139,22 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
        | last_time: current_time,
          accumulator: new_accumulator,
          active_table: state.inactive_table,
-         inactive_table: state.active_table
+         inactive_table: state.active_table,
+         balls_are_moving: currently_moving
      }}
+  end
+
+  defp are_any_balls_moving?(ets_table, _game_id) do
+    is_moving =
+      ets_table
+      |> :ets.tab2list()
+      |> Enum.any?(fn {_id, particle_state} ->
+        [vx, vy] = particle_state.vel
+        magnitude_sq = vx * vx + vy * vy
+        magnitude_sq > 0.01
+      end)
+
+    is_moving
   end
 
   defp update_simulation_loop(accumulator, state) do
@@ -143,9 +165,7 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
   defp simulate_steps(acc, 0, _state), do: acc
 
   defp simulate_steps(acc, remaining_steps, state) when acc >= @dt do
-    # 1. Mover partículas (delegação para cada processo Particle)
     broadcast_move_command(state.game_id, state.ets_table)
-    # 2. Detectar e resolver colisões
     detect_and_resolve_collisions(state)
     simulate_steps(acc - @dt, remaining_steps - 1, state)
   end
@@ -156,7 +176,6 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
     ets_table
     |> :ets.tab2list()
     |> Task.async_stream(fn {particle_id, _particle_data} ->
-      # Cada partícula calcula seu próprio movimento
       Particle.move(game_id, particle_id, @dt)
     end)
     |> Stream.run()
@@ -225,7 +244,6 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
         new_pos = Enum.at(final_pos_list, index)
         new_vel = Enum.at(final_vel_list, index)
 
-        # Envia a atualização para o processo Particle específico
         Particle.update_after_collision(game_id, particle_id, new_vel, new_pos)
       end
     end
@@ -258,10 +276,8 @@ defmodule SnookerGameEx.Engine.CollisionEngine do
   end
 
   defp batch_particles(all_particles) do
-    # Converte a lista de tuplas do ETS para a struct de tensores
     ids = Enum.map(all_particles, &elem(&1, 0))
 
-    # Extrai dados da tupla. Isto é um pouco frágil; usar structs seria melhor.
     pos_list = Enum.map(all_particles, &elem(&1, 1).pos)
     vel_list = Enum.map(all_particles, &elem(&1, 1).vel)
     radius_list = Enum.map(all_particles, &elem(&1, 1).radius)

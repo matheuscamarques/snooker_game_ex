@@ -18,4 +18,10 @@ defmodule SnookerGameEx.GameNotifier do
               particle_id :: any(),
               ball_data :: map()
             ) :: :ok
+
+  @doc "Notifica que o estado das regras do jogo foi atualizado."
+  @callback notify_game_state_update(game_id :: String.t(), rules_state :: any()) :: :ok
+
+  @doc "Notifica que todas as bolas pararam de se mover."
+  @callback notify_all_balls_stopped(game_id :: String.t()) :: :ok
 end
